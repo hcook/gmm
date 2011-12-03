@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.random import *
 from numpy import s_
+from asp import PlatformDetector
 import asp.codegen.templating.template as AspTemplate
 import asp.jit.asp_module as asp_module
 from codepy.cgen import *
@@ -10,38 +11,10 @@ import sys
 from imp import find_module
 from os.path import join
 
-class DeviceParameters(object):
-    pass
-
-class DeviceCUDA10(DeviceParameters):
-    def __init__(self):
-        self.params = {}
-        # Feature support
-        self.params['supports_32b_floating_point_atomics'] = 0
-        # Technical specifications
-        self.params['max_xy_grid_dim'] = 65535
-        self.params['max_threads_per_block'] = 512
-        self.params['max_shared_memory_capacity_per_SM'] = 16348
-        # Device parameters
-        self.params['max_gpu_memory_capacity'] = 1073741824
-
-class DeviceCUDA20(DeviceParameters):
-    def __init__(self):
-        self.params = {}
-        # Feature support
-        self.params['supports_32b_floating_point_atomics'] = 1
-        # Technical specifications
-        self.params['max_xy_grid_dim'] = 65535
-        self.params['max_threads_per_block'] = 1024
-        self.params['max_shared_memory_capacity_per_SM'] = 16384*3
-        # Device parameters
-        self.params['max_gpu_memory_capacity'] = 1610612736
-
 #TODO: Change to GMMComponents
 class Components(object):
     
     def __init__(self, M, D, weights = None, means = None, covars = None):
-
         self.M = M
         self.D = D
         self.weights = weights if weights is not None else np.empty(M, dtype=np.float32)
@@ -80,13 +53,13 @@ class EvalData(object):
         self.N = N
 
 class GMM(object):
-
-    #Singleton ASP modules shared by all instances of GMM
+    #Module for checking compilers and platform features.
+    #TODO: We track the device id separately here because this specializer only supports using one CUDA device for all GMM instances.
+    platform = PlatformDetector()
+    cuda_device_id = None
+    #Singleton ASP module shared by all instances of GMM
     asp_mod = None    
     def get_asp_mod(self): return GMM.asp_mod or self.initialize_asp_mod()
-    gpu_util_mod = None
-    def get_gpu_util_mod(self): return GMM.gpu_util_mod or self.initialize_gpu_util_mod()
-    device_id = None
 
     #Default parameter space for code variants
     variant_param_defaults = { 'base': {},
@@ -109,14 +82,13 @@ class GMM(object):
             'min_iters': ['1'] }
     }
 
-    
-    def cuda_limits(param_dict, device):
-            for k, v in device.params.iteritems():
+    def cuda_limits(param_dict, gpu_info):
+            for k, v in gpu_info.iteritems():
                 param_dict[k] = str(v)
 
-            tpb = int(device.params['max_threads_per_block'])
-            shmem = int(device.params['max_shared_memory_capacity_per_SM'])
-            gpumem = int(device.params['max_gpu_memory_capacity'])
+            tpb = int(gpu_info['max_threads_per_block'])
+            shmem = int(gpu_info['max_shared_memory_per_block'])
+            gpumem = int(gpu_info['total_mem'])
             vname = param_dict['covar_version_name']
             eblocks = int(param_dict['num_blocks_estep'])
             ethreads = int(param_dict['num_threads_estep'])
@@ -127,7 +99,7 @@ class GMM(object):
             max_m = int(param_dict['max_num_components'])
             max_m_v3 = int(param_dict['max_num_components_covar_v3'])
             max_n = gpumem / (max_d*4)
-            max_arg_values = (max_m, max_d, max_n) #TODO: get device mem size
+            max_arg_values = (max_m, max_d, max_n)
 
             compilable = False
             comp_func = lambda *args, **kwargs: False
@@ -193,7 +165,7 @@ class GMM(object):
     eval_data_gpu_copy = None
     eval_data_cpu_copy = None
 
-    # nternal functions to allocate and deallocate component and event data on the CPU and GPU
+    #Internal functions to allocate and deallocate component and event data on the CPU and GPU
     def internal_alloc_event_data(self, X):
         if not np.array_equal(GMM.event_data_cpu_copy, X) and X is not None:
             if GMM.event_data_cpu_copy is not None:
@@ -262,62 +234,22 @@ class GMM(object):
 
         self.use_cuda = False
         self.use_cilk = False
-        self.device = None
-        if 'cuda' in names_of_backends_to_use:
+        if 'cuda' in names_of_backends_to_use and 'nvcc' in GMM.platform.get_compilers():
             self.use_cuda = True
-            if GMM.device_id == None:
-                GMM.device_id = device_id
-                self.get_gpu_util_mod().set_GPU_device(device_id)
-            elif GMM.device_id != device_id:
+            if GMM.cuda_device_id == None:
+                GMM.cuda_device_id = device_id
+                GMM.platform.set_cuda_device(device_id)
+            elif GMM.cuda_device_id != device_id:
                 #TODO: May actually be allowable if deallocate all GPU allocations first?
                 print "WARNING: As python only has one thread context, it can only use one GPU at a time, and you are attempting to run on a second GPU."
-            self.capability = self.get_gpu_util_mod().get_GPU_device_capability_as_tuple(self.device_id)
-            #TODO: Figure out some kind of class inheiritance to deal with the complexity of functionality and perf params
-            self.device = DeviceCUDA10() if self.capability[0] < 2 else DeviceCUDA20()
-        if 'cilk' in names_of_backends_to_use:
+            self.cuda_info = GMM.platform.get_cuda_info()
+        else: print "WARNING: You asked for a CUDA backend but no compiler was found."
+        if 'cilk' in names_of_backends_to_use and 'icc' in GMM.platform.get_compilers():
             self.use_cilk = True
-
-    #Called the first time a GMM instance tries to use a GPU utility function
-    def initialize_gpu_util_mod(self):
-        GMM.gpu_util_mod = asp_module.ASPModule(use_cuda=True)
-        GMM.gpu_util_mod.backends['cuda_boost'].codepy_toolchain.cc = 'gcc'
-        GMM.gpu_util_mod.backends['cuda_boost'].codepy_toolchain.cflags.append('-fPIC')
-        GMM.gpu_util_mod.backends['cuda'].codepy_toolchain.cc = 'gcc'
-        GMM.gpu_util_mod.backends['cuda'].codepy_toolchain.cflags.append('-fPIC')
-        GMM.gpu_util_mod.backends['cuda'].nvcc_toolchain.cflags.extend(["-Xcompiler","-fPIC"])
-        GMM.gpu_util_mod.backends['cuda'].nvcc_toolchain.add_library("project",['.','./include'],[],[])  
-
-        #TODO: Figure out what kind of file to put this in
-        #TODO: Or, redo these using more robust functionality stolen from PyCuda
-        util_funcs = [ ("""
-            void set_GPU_device(int device) {
-              int GPUCount;
-              cudaGetDeviceCount(&GPUCount);
-              if(GPUCount == 0) {
-                device = 0;
-              } else if (device >= GPUCount) {
-                device  = GPUCount-1;
-              }
-              cudaSetDevice(device);
-            }""", "set_GPU_device") ,
-            ("""
-            boost::python::tuple get_GPU_device_capability_as_tuple(int device) {
-              int major, minor;
-              cuDeviceComputeCapability(&major, &minor, device);
-              return boost::python::make_tuple(major, minor);
-            }
-            """, "get_GPU_device_capability_as_tuple")]
-        for fbody, fname in util_funcs:
-            GMM.gpu_util_mod.add_function(fbody, fname, backend_name='cuda_boost')
-        host_project_header_names = [ 'cuda_runtime.h'] 
-        for x in host_project_header_names: GMM.gpu_util_mod.add_to_preamble([Include(x, False)], 'cuda_boost')
-        GMM.gpu_util_mod.compile_module('cuda')
-        #GMM.gpu_util_mod.compile_module('cuda_boost')
-        return GMM.gpu_util_mod
+        else: print "WARNING: You asked for a Cilk backend but no compiler was found."
 
     #Called the first time a GMM instance tries to use a specialized function
     def initialize_asp_mod(self):
-
         # Create ASP module
         GMM.asp_mod = asp_module.ASPModule(use_cuda=self.use_cuda, use_cilk=self.use_cilk)
 
@@ -344,14 +276,11 @@ class GMM(object):
             GMM.asp_mod.backends['cilk'].codepy_toolchain.cflags = ['-O2','-gcc', '-ip','-fPIC']
 
         # Setup toolchain and compile
-
 	from codepy.libraries import add_pyublas, add_numpy
         for mod in GMM.asp_mod.backends.itervalues():
             mod.codepy_toolchain.add_library("project",['.','./include'],[],[])
             add_pyublas(mod.codepy_toolchain)
             add_numpy(mod.codepy_toolchain)
-        
-        #print GMM.asp_mod.backends['cuda'].codepy_module.boost_module.generate()
         GMM.asp_mod.compile_all()
 	GMM.asp_mod.restore_method_timings('train')
 	GMM.asp_mod.restore_method_timings('eval')
@@ -444,7 +373,7 @@ class GMM(object):
 
     def render_and_add_to_module( self, param_dict, limit_generator, render_backend_specific_funcs, backend_name):
         # Evaluate whether these particular parameters can be compiled on this particular device
-        can_be_compiled, comparison_function_for_input_args = limit_generator(param_dict, self.device)
+        can_be_compiled, comparison_function_for_input_args = limit_generator(param_dict, self.cuda_info)
 
         # Get vals based on alphabetical order of keys
         param_names = param_dict.keys()
@@ -572,7 +501,6 @@ class GMM(object):
         self.M -= 1
         self.components.shrink_components(self.M)
         self.get_asp_mod().relink_components_on_CPU(self.components.weights, self.components.means, self.components.covars)
-        return 
 
     def compute_distance_rissanen(self, c1, c2):
         self.get_asp_mod().compute_distance_rissanen(c1, c2, self.D)
@@ -598,10 +526,7 @@ def compute_distance_BIC(gmm1, gmm2, data):
     m = np.append(gmm1.components.means, gmm2.components.means)
     c = np.append(gmm1.components.covars, gmm2.components.covars)
     temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c)
-
     temp_GMM.train(data)
-
     score = temp_GMM.eval_data.likelihood - (gmm1.eval_data.likelihood + gmm2.eval_data.likelihood)
-    #print temp_GMM.eval_data.likelihood, gmm1.eval_data.likelihood, gmm2.eval_data.likelihood, score
     return temp_GMM, score
 
