@@ -1,5 +1,5 @@
 <%
-tempbuff_type_name = 'unsigned int' if supports_32b_floating_point_atomics == '0' else 'float'
+tempbuff_type_name = 'unsigned int' if supports_float32_atomic_add == '0' else 'float'
 %>
 
 __device__ void average_variance${'_'+'_'.join(param_val_list)}(float* fcs_data, float* means, int num_dimensions, int num_events, float* avgvar) {
@@ -521,7 +521,7 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
 
         myR[matrix_index] = cov_sum;
      
-%if supports_32b_floating_point_atomics != '0':
+%if supports_float32_atomic_add != '0':
         float old = atomicAdd(&(temp_buffer[c*num_dimensions*num_dimensions+matrix_index]), myR[matrix_index]); 
 %else:
         unsigned int fixp_myR = (unsigned int)floor((myR[matrix_index])*1000000.0f);
@@ -533,7 +533,7 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
 
     if(tid < num_dimensions*(num_dimensions+1)/2) {
       if(components->N[c] >= 1.0f) { // Does it need to be >=1, or just something non-zero?
-%if supports_32b_floating_point_atomics != '0':
+%if supports_float32_atomic_add != '0':
         float cs = temp_buffer[c*num_dimensions*num_dimensions+matrix_index];
 %else:
         float cs = (((float)temp_buffer[c*num_dimensions*num_dimensions+matrix_index])/1000000.0f);

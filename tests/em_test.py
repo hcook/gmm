@@ -7,7 +7,7 @@ import math
 import timeit
 import copy
 
-from em import *
+from gmm import *
 
 def generate_synthetic_data(N):
     np.random.seed(0)
@@ -101,13 +101,10 @@ if __name__ == '__main__':
     }
     emt = EMTester(False, variant_param_spaces, num_subplots, device_id, ['cuda'])
     emt.new_gmm(3)
-    emt.test_pure_python()
+    #emt.test_pure_python()
     emt.test_sejits()
     emt.test_sejits()
     emt.test_sejits()
     emt.test_sejits()
-    #print emt.gmm.asp_mod.compiled_methods_with_variants['train'].variant_times
-    #print emt.gmm.asp_mod.compiled_methods_with_variants['eval'].variant_times
     emt.plot()
-    #t = timeit.Timer(emt.test_pure_python)
  

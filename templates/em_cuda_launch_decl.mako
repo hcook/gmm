@@ -1,5 +1,5 @@
 <%
-tempbuff_type_name = 'unsigned int' if supports_32b_floating_point_atomics == '0' else 'float'
+tempbuff_type_name = 'unsigned int' if supports_float32_atomic_add == '0' else 'float'
 %>
 
 void seed_components_launch${'_'+'_'.join(param_val_list)}(float* d_fcs_data_by_event, components_t* d_components, int num_dimensions, int original_num_components, int num_events);

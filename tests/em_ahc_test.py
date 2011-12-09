@@ -7,7 +7,7 @@ import math
 import timeit
 import copy
 
-from em import *
+from gmm import *
 
 def generate_synthetic_data(N):
     np.random.seed(0)
@@ -22,9 +22,8 @@ def generate_synthetic_data(N):
 
 class EMTester(object):
 
-    def __init__(self, from_file, variant_param_space, device_id, num_subps):
+    def __init__(self, from_file, device_id, num_subps):
         self.results = {}
-        self.variant_param_space = variant_param_space
         self.device_id = device_id
         self.num_subplots = num_subps
         self.plot_id = num_subps/2*100 + 21
@@ -40,12 +39,12 @@ class EMTester(object):
 
     def new_gmm(self, M):
         self.M = M
-        self.gmm = GMM(self.M, self.D, self.variant_param_space, self.device_id)
+        self.gmm = GMM(self.M, self.D, device_id=self.device_id)
 
     def new_gmm_list(self, M, k):
         self.M = M
         self.init_num_clusters = k
-        self.gmm_list = [GMM(self.M, self.D, self.variant_param_space, self.device_id) for i in range(k)]
+        self.gmm_list = [GMM(self.M, self.D, device_id=self.device_id) for i in range(k)]
 
     def test_speech_ahc(self):
         
@@ -198,21 +197,7 @@ class EMTester(object):
 if __name__ == '__main__':
     device_id = 0
     num_subplots = 6
-    variant_param_space = {
-            'num_blocks_estep': ['16'],
-            'num_threads_estep': ['512'],
-            'num_threads_mstep': ['256'],
-            'num_event_blocks': ['128'],
-            'max_num_dimensions': ['50'],
-            'max_num_components': ['128'],
-            'max_num_dimensions_covar_v3': ['40'],
-            'max_num_components_covar_v3': ['82'],
-            'diag_only': ['0'],
-            'max_iters': ['10'],
-            'min_iters': ['1'],
-            'covar_version_name': ['V2A']
-    }
-    emt = EMTester(True, variant_param_space, device_id, num_subplots)
+    emt = EMTester(True, device_id, num_subplots)
     #emt.new_gmm(6)
     #t = timeit.Timer(emt.time_cytosis_ahc)
     #print t.timeit(number=1)
