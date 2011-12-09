@@ -4,7 +4,7 @@ import itertools
 import sys
 import pickle
 import timeit
-from em import *
+from gmm import *
 
 class EMAutotuner(object):
 
@@ -68,9 +68,6 @@ if __name__ == '__main__':
             'max_num_components': ['122'],
             'max_num_dimensions_covar_v3': ['43'],
             'max_num_components_covar_v3': ['72'],
-            'diag_only': ['0'],
-            'max_iters': ['10'],
-            'min_iters': ['10'],
             'covar_version_name': ['V1', 'V2A', 'V2B', 'V3']
     }
     input_param_space =  {

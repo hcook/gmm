@@ -6,7 +6,7 @@ import asp.codegen.templating.template as AspTemplate
 import asp.jit.asp_module as asp_module
 from codepy.cgen import *
 from codepy.cuda import CudaModule
-import pyublas
+import math
 import sys
 from imp import find_module
 from os.path import join
@@ -72,14 +72,8 @@ class GMM(object):
             'max_num_components': ['122'],
             'max_num_dimensions_covar_v3': ['41'],
             'max_num_components_covar_v3': ['81'],
-            'diag_only': ['0'],
-            'max_iters': ['10'],
-            'min_iters': ['1'],
             'covar_version_name': ['V1', 'V2A', 'V2B', 'V3'] },
-        'cilk': {
-            'diag_only': ['0'],
-            'max_iters': ['10'],
-            'min_iters': ['1'] }
+        'cilk': {}
     }
 
     def cuda_compilable_limits(param_dict, gpu_info):
@@ -195,7 +189,7 @@ class GMM(object):
         if not np.array_equal(GMM.event_data_cpu_copy, X) and X is not None:
             if GMM.event_data_cpu_copy is not None:
                 self.internal_free_event_data()
-            self.get_asp_mod().alloc_events_on_CPU(X, X.shape[0], X.shape[1])
+            self.get_asp_mod().alloc_events_on_CPU(X)
             GMM.event_data_cpu_copy = X
             if self.use_cuda:
                 self.get_asp_mod().alloc_events_on_GPU(X.shape[0], X.shape[1])
@@ -249,9 +243,10 @@ class GMM(object):
             self.get_asp_mod().dealloc_evals_on_GPU()
             GMM.eval_data_gpu_copy = None
 
-    def __init__(self, M, D, means=None, covars=None, weights=None, names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
+    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='full', names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
         self.M = M
         self.D = D
+        self.cvtype = cvtype
         self.variant_param_spaces = variant_param_spaces or GMM.variant_param_defaults
         self.components = Components(M, D, weights, means, covars)
         self.eval_data = EvalData(1, M)
@@ -280,10 +275,6 @@ class GMM(object):
         # Create ASP module
         GMM.asp_mod = asp_module.ASPModule(use_cuda=self.use_cuda, use_cilk=self.use_cilk)
 
-        base_system_header_names = [ 'stdlib.h', 'stdio.h', 'string.h', 'math.h', 'time.h','pyublas/numpy.hpp']
-        for header in base_system_header_names: 
-            GMM.asp_mod.add_to_preamble([Include(header, True)], 'c++')
-
         if self.use_cuda:
             self.insert_base_code_into_listed_modules(['c++'])
             self.insert_non_rendered_code_into_cuda_module()
@@ -302,10 +293,8 @@ class GMM(object):
             #GMM.asp_mod.backends['cilk'].toolchain.cflags = ['-O2','-gcc', '-ip','-fPIC']
 
         # Setup toolchain and compile
-	from codepy.libraries import add_pyublas, add_numpy, add_boost_python, add_cuda
+	from codepy.libraries import add_numpy, add_boost_python, add_cuda
         for mod in GMM.asp_mod.backends.itervalues():
-            mod.toolchain.add_library("project",['.','./include'],[],[])
-            add_pyublas(mod.toolchain)
             add_numpy(mod.toolchain)
             add_boost_python(mod.toolchain)
             add_cuda(mod.toolchain) #TODO: for now, need to add cuda to c++ toolchain as it might contain host-side cuda funcs
@@ -324,16 +313,18 @@ class GMM(object):
                 float* R;      // Covariance matrix: [M*D*D]
                 float* Rinv;   // Inverse of covariance matrix: [M*D*D]
             } components_t;"""
-        base_system_header_names = [ 'stdlib.h', 'stdio.h', 'string.h', 'math.h', 'time.h','pyublas/numpy.hpp']
+        base_system_header_names = [ 'stdlib.h', 'stdio.h', 'string.h', 'math.h', 'time.h', 'numpy/arrayobject.h']
         for b_name in names_of_backends:
             for header in base_system_header_names: 
                 GMM.asp_mod.add_to_preamble([Include(header, True)], b_name)
             #Add Boost interface links for components and distance objects
+            GMM.asp_mod.add_to_init("import_array();", b_name)
             GMM.asp_mod.add_to_init("""boost::python::class_<components_struct>("Components");
                 boost::python::scope().attr("components") = boost::python::object(boost::python::ptr(&components));""", b_name)
-            GMM.asp_mod.add_to_init("""boost::python::class_<return_component_container>("ReturnClusterContainer")
-                .def(pyublas::by_value_rw_member( "new_component", &return_component_container::component))
-                .def(pyublas::by_value_rw_member( "distance", &return_component_container::distance)) ;
+            GMM.asp_mod.add_to_init("""
+                 boost::python::class_<return_component_container>("ReturnClusterContainer")
+                 .def_readwrite("new_component", &return_component_container::component)
+                 .def_readwrite("distance", &return_component_container::distance);
                  boost::python::scope().attr("component_distance") = boost::python::object(boost::python::ptr(&ret));""", b_name)
             GMM.asp_mod.add_to_module([Line(c_base_rend)],b_name)
             GMM.asp_mod.add_to_preamble(component_t_decl, b_name)
@@ -406,11 +397,11 @@ class GMM(object):
             c_tpl = AspTemplate.Template(filename='_'.join(["templates/em",backend_name,func_name+".mako"]))
             func_body = c_tpl.render( param_val_list = param_val_list, **param_dict)
         else:
-            func_body = "void " + var_name_generator(func_name) + "(int m, int d, int n, pyublas::numpy_vector<float> data){}"
+            func_body = "void " + var_name_generator(func_name) + "(int m, int d, int n, PyObject *data){}"
 
         return var_name_generator(func_name), func_body
 
-    def generate_permutations (self, key_arr, val_arr_arr, current, compilable, make_run_check, backend_specific_render_func, backend_name, func_names, result):
+    def generate_permutations (self, key_arr, val_arr_arr, current, compilable, make_run_check, backend_specific_render_func, backend_name, func_names, cvtype, result):
         idx = len(current)
         name = key_arr[idx]
         for v in val_arr_arr[idx]:
@@ -418,6 +409,7 @@ class GMM(object):
             if idx == len(key_arr)-1:
                 # Get vals based on alphabetical order of keys
                 param_dict = current.copy()
+                param_dict['diag_only'] = '1' if cvtype == 'diag' else '0'
                 param_names = param_dict.keys()
                 param_names.sort()
                 vals = map(param_dict.get, param_names)
@@ -430,61 +422,63 @@ class GMM(object):
                     v_name, v_body = self.render_func_variant(param_dict, vals, can_be_compiled, backend_name, func_name)
                     result.setdefault(func_name,[]).append((v_name,v_body,run_check))
             else:
-                self.generate_permutations(key_arr, val_arr_arr, current, compilable, make_run_check, backend_specific_render_func, backend_name, func_names, result)
+                self.generate_permutations(key_arr, val_arr_arr, current, compilable, make_run_check, backend_specific_render_func, backend_name, func_names, cvtype, result)
         del current[name]
 
     def insert_rendered_code_into_module(self, backend_name):
-        func_names = ['train', 'eval']
-        all_variants = {}
-        self.generate_permutations( self.variant_param_spaces[backend_name].keys(),
-                                    self.variant_param_spaces[backend_name].values(), {}, 
-                                    GMM.backend_compilable_limit_funcs[backend_name], 
-                                    GMM.backend_runable_limit_funcs[backend_name],
-                                    GMM.backend_specific_render_funcs[backend_name], 
-                                    backend_name, func_names, all_variants)
         import hashlib
-        key_func = lambda self, *args, **kwargs: hashlib.md5(str(args)+str(kwargs)).hexdigest()
-        for func_name in func_names:
-            names  = [r[0] for r in all_variants[func_name]]
-            bodies = [r[1] for r in all_variants[func_name]]
-            checks = [r[2] for r in all_variants[func_name]]
-            GMM.asp_mod.add_function(   func_name, bodies, 
-                                        variant_names = names,
-                                        run_check_funcs = checks,
-                                        key_function = key_func,
-                                        backend = backend_name)
+        key_func = lambda *args, **kwargs: hashlib.md5(str([args[0],args[1],math.floor(math.log10(args[2]))])+str(kwargs)).hexdigest()
+        for cvtype in ['diag', 'full']:
+            func_names = ['train', 'eval']
+            all_variants = {}
+            self.generate_permutations( self.variant_param_spaces[backend_name].keys(),
+                                        self.variant_param_spaces[backend_name].values(), {}, 
+                                        GMM.backend_compilable_limit_funcs[backend_name], 
+                                        GMM.backend_runable_limit_funcs[backend_name],
+                                        GMM.backend_specific_render_funcs[backend_name], 
+                                        backend_name, func_names, cvtype, all_variants)
+            for func_name in func_names:
+                names  = [r[0] for r in all_variants[func_name]]
+                bodies = [r[1] for r in all_variants[func_name]]
+                checks = [r[2] for r in all_variants[func_name]]
+                GMM.asp_mod.add_function(   '_'.join([func_name, cvtype]), 
+                                            bodies, 
+                                            variant_names = names,
+                                            run_check_funcs = checks,
+                                            key_function = key_func,
+                                            backend = backend_name)
 
     def __del__(self):
         self.internal_free_event_data()
         self.internal_free_component_data()
         self.internal_free_eval_data()
     
-    def train_using_python(self, input_data):
-        from scikits.learn import mixture
-        self.clf = mixture.GMM(n_states=self.M, cvtype='full')
-        self.clf.fit(input_data)
+    def train_using_python(self, input_data, iters=10):
+        from sklearn import mixture
+        self.clf = mixture.GMM(n_components=self.M, cvtype=self.cvtype)
+        self.clf.fit(input_data, n_iter=iters)
         return self.clf.means, self.clf.covars
     
     def eval_using_python(self, obs_data):
-        from scikits.learn import mixture
+        from sklearn import mixture
         if self.clf is not None:
             return self.clf.eval(obs_data)
         else: return []
 
     def predict_using_python(self, obs_data):
-        from scikits.learn import mixture
+        from sklearn import mixture
         if self.clf is not None:
             return self.clf.predict(obs_data)
         else: return []
 
-    def train(self, input_data):
+    def train(self, input_data, min_iters=1, max_iters=10):
         N = input_data.shape[0] 
         if input_data.shape[1] != self.D:
             print "Error: Data has %d features, model expects %d features." % (input_data.shape[1], self.D)
         self.internal_alloc_event_data(input_data)
         self.internal_alloc_eval_data(input_data)
         self.internal_alloc_component_data()
-        self.eval_data.likelihood = self.get_asp_mod().train(self.M, self.D, N)[0]
+        self.eval_data.likelihood = getattr(self.get_asp_mod(),'train_'+self.cvtype)(self.M, self.D, N, min_iters, max_iters)[0]
         return self
 
     def eval(self, obs_data):
@@ -494,7 +488,7 @@ class GMM(object):
         self.internal_alloc_event_data(obs_data)
         self.internal_alloc_eval_data(obs_data)
         self.internal_alloc_component_data()
-        self.eval_data.likelihood = self.get_asp_mod().eval(self.M, self.D, N)
+        self.eval_data.likelihood = getattr(self.get_asp_mod(),'eval_'+self.cvtype)(self.M, self.D, N)
         logprob = self.eval_data.loglikelihoods
         posteriors = self.eval_data.memberships
         return logprob, posteriors # N log probabilities, NxM posterior probabilities for each component
@@ -524,12 +518,6 @@ class GMM(object):
         dist = self.get_asp_mod().compiled_module.component_distance.distance
         return new_component, dist
 
-    def get_new_component_means(self, new_component):
-        return self.get_asp_mod().get_temp_component_means(new_component, self.D).reshape((1, self.D))
-
-    def get_new_component_covars(self, new_component):
-        return self.get_asp_mod().get_temp_component_covars(new_component, self.D).reshape((1, self.D, self.D))
-    
 def compute_distance_BIC(gmm1, gmm2, data):
     cd1_M = gmm1.M
     cd2_M = gmm2.M

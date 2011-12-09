@@ -1,11 +1,13 @@
 <%
-tempbuff_type_name = 'unsigned int' if supports_32b_floating_point_atomics == '0' else 'float'
+tempbuff_type_name = 'unsigned int' if supports_float32_atomic_add == '0' else 'float'
 %>
 
 boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
                              int num_components, 
                              int num_dimensions, 
-                             int num_events) 
+                             int num_events,
+                             int min_iters,
+                             int max_iters) 
 {
   
   //allocate MxM pointers for scratch components used during merging
@@ -71,7 +73,7 @@ boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
   // This is the iterative loop for the EM algorithm.
   // It re-estimates parameters, re-computes constants, and then regroups the events
   // These steps keep repeating until the change in likelihood is less than some epsilon        
-  while(iters < ${min_iters} || (iters < ${max_iters} && fabs(change) > epsilon)) {
+  while(iters < min_iters || (iters < max_iters && fabs(change) > epsilon)) {
     old_likelihood = likelihood;
             
     // This kernel computes a new N, pi isn't updated until compute_constants though
