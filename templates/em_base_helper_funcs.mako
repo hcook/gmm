@@ -128,16 +128,16 @@ void alloc_events_on_CPU(PyObject *input_data) {
   }
 }
 
-void alloc_index_list_on_CPU(pyublas::numpy_vector<int> input_index_list) {
-  index_list = input_index_list.data().data();
+void alloc_index_list_on_CPU(PyObject *input_index_list) {
+  index_list =  ((int*)PyArray_DATA(input_index_list));
 }
 
-void alloc_events_from_index_on_CPU(pyublas::numpy_vector<float> input_data, pyublas::numpy_vector<int> indices, int num_indices, int num_dimensions) {
+void alloc_events_from_index_on_CPU(PyObject *input_data, PyObject *indices, int num_indices, int num_dimensions) {
 
   fcs_data_by_event = (float*)malloc(num_indices*num_dimensions*sizeof(int));
   for(int i = 0; i<num_indices; i++) {
     for(int d = 0; d<num_dimensions; d++) {
-      fcs_data_by_event[i*num_dimensions+d] = input_data[indices[i]*num_dimensions+d];
+      fcs_data_by_event[i*num_dimensions+d] = ((float*)PyArray_DATA(input_data))[((int*)PyArray_DATA(indices))[i]*num_dimensions+d];
     }
   }
 
@@ -152,11 +152,12 @@ void alloc_events_from_index_on_CPU(pyublas::numpy_vector<float> input_data, pyu
 
 // ================== Cluster data allocation on CPU  ================= :
 
-void alloc_components_on_CPU(int M, int D, PyObject *weights, PyObject *means, PyObject *covars) {
+void alloc_components_on_CPU(int M, int D, PyObject *weights, PyObject *means, PyObject *covars, PyObject *comp_probs) {
   components.pi = ((float*)PyArray_DATA(weights));
   components.means = ((float*)PyArray_DATA(means));
   components.R = ((float*)PyArray_DATA(covars));
-    
+  components.CP = ((float*)PyArray_DATA(comp_probs));
+
   components.N = (float*) malloc(sizeof(float)*M);
   components.constant = (float*) malloc(sizeof(float)*M);
   components.avgvar = (float*) malloc(sizeof(float)*M);
@@ -308,21 +309,21 @@ float Log_Likelihood_KL(float *feature, int DIM, int gmm_M, float *gmm_weights, 
 }
 
 
-float compute_KL_distance(int DIM, int gmm1_M, int gmm2_M, pyublas::numpy_vector<float> gmm1_weights_in, pyublas::numpy_vector<float> gmm1_means_in, pyublas::numpy_vector<float> gmm1_covars_in, pyublas::numpy_vector<float> gmm1_CP_in, pyublas::numpy_vector<float> gmm2_weights_in, pyublas::numpy_vector<float> gmm2_means_in, pyublas::numpy_vector<float> gmm2_covars_in, pyublas::numpy_vector<float> gmm2_CP_in) {
+float compute_KL_distance(int DIM, int gmm1_M, int gmm2_M, PyObject *gmm1_weights_in, PyObject *gmm1_means_in, PyObject *gmm1_covars_in, PyObject *gmm1_CP_in, PyObject *gmm2_weights_in, PyObject *gmm2_means_in, PyObject *gmm2_covars_in, PyObject *gmm2_CP_in) {
 
   float aux;
   float log_g1,log_f1,log_g2,log_f2,f_log_g=0,f_log_f=0,g_log_f=0,g_log_g=0;
   float *point_a = new float[DIM];
   float *point_b = new float[DIM];
 
-  float *gmm1_weights = gmm1_weights_in.data().data();
-  float *gmm1_means = gmm1_means_in.data().data();
-  float *gmm1_covars = gmm1_covars_in.data().data();
-  float *gmm1_CP = gmm1_CP_in.data().data();
-  float *gmm2_weights = gmm2_weights_in.data().data();
-  float *gmm2_means = gmm2_means_in.data().data();
-  float *gmm2_covars = gmm2_covars_in.data().data();
-  float *gmm2_CP = gmm2_CP_in.data().data();
+  float *gmm1_weights = ((float*)PyArray_DATA(gmm1_weights_in));
+  float *gmm1_means = ((float*)PyArray_DATA(gmm1_means_in));
+  float *gmm1_covars = ((float*)PyArray_DATA(gmm1_covars_in));
+  float *gmm1_CP = ((float*)PyArray_DATA(gmm1_CP_in));
+  float *gmm2_weights = ((float*)PyArray_DATA(gmm2_weights_in));
+  float *gmm2_means = ((float*)PyArray_DATA(gmm2_means_in));
+  float *gmm2_covars = ((float*)PyArray_DATA(gmm2_covars_in));
+  float *gmm2_CP = ((float*)PyArray_DATA(gmm2_CP_in));
 
   for(int i=0;i<gmm1_M;i++)
     {

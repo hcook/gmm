@@ -14,7 +14,7 @@ import os.path
 import getopt
 import h5py
 
-from em import *
+from gmm import *
 
 
 MINVALUEFORMINUSLOG = -1000.0
@@ -223,10 +223,10 @@ class Diarizer(object):
         self.M = M
         self.gmm = GMM(self.M, self.D)
 
-    def new_gmm_list(self, M, k):
+    def new_gmm_list(self, M, K):
         self.M = M
-        self.init_num_clusters = k
-        self.gmm_list = [GMM(self.M, self.D) for i in range(k)]
+        self.init_num_clusters = K
+        self.gmm_list = [GMM(self.M, self.D) for i in range(K)]
 
 
 

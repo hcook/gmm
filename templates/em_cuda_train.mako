@@ -1,9 +1,5 @@
 <%
-<<<<<<< HEAD:specializers/gmm/templates/em_cuda_train.mako
 tempbuff_type_name = 'unsigned int' if supports_float32_atomic_add == '0' else 'float'
-=======
-tempbuff_type_name = 'int' if supports_32b_floating_point_atomics == '0' else 'float'
->>>>>>> gmm:templates/em_cuda_train.mako
 %>
 
 boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
@@ -57,13 +53,8 @@ boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
   // This is the iterative loop for the EM algorithm.
   // It re-estimates parameters, re-computes constants, and then regroups the events
   // These steps keep repeating until the change in likelihood is less than some epsilon        
-<<<<<<< HEAD:specializers/gmm/templates/em_cuda_train.mako
+
   while(iters < min_iters || (iters < max_iters && fabs(change) > epsilon)) {
-=======
-
-
-  while(iters < ${max_iters}) {// || (iters < ${max_iters} && fabs(change) > epsilon)) {
->>>>>>> gmm:templates/em_cuda_train.mako
     old_likelihood = likelihood;
     
     estep1_launch${'_'+'_'.join(param_val_list)}(d_fcs_data_by_dimension,d_components, d_component_memberships, num_dimensions,num_components,num_events,d_loglikelihoods);
