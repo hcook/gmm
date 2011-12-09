@@ -1,5 +1,37 @@
 #define PI  3.1415926535897931
 #define COVARIANCE_DYNAMIC_RANGE 1E6
+#include <stdio.h>
+#include <float.h>
+#include <limits.h>
+#define MINVALUEFORMINUSLOG -1000.0f
+#define MIN_VARIANCE 0.01
+#define SCALE_VAL 1000.0f
+
+
+__device__ static int  ToFixedPoint(float input) {
+        if (input==FLT_MAX)
+                return INT_MAX;
+        return (int)(SCALE_VAL*input);
+}
+
+__device__ static float ToFloatPoint(int input) {
+        if (input==INT_MAX)
+                return FLT_MAX;
+        return (float)input/SCALE_VAL;
+}
+
+__device__ float log_add(float log_a, float log_b) {
+  if(log_a < log_b) {
+      float tmp = log_a;
+      log_a = log_b;
+      log_b = tmp;
+    }
+  //setting MIN...LOG so small, I don't even need to look
+  return (((log_b - log_a) <= MINVALUEFORMINUSLOG) ? log_a : 
+                log_a + (float)(logf(1.0 + (double)(expf((double)(log_b - log_a))))));
+}
+
+
 
 /*
  * Compute the multivariate mean of the FCS data
@@ -21,71 +53,6 @@ __device__ void mvtmeans(float* fcs_data, int num_dimensions, int num_events, fl
     }
 }
 
-// Inverts an NxN matrix 'data' stored as a 1D array in-place
-// 'actualsize' is N
-// Computes the log of the determinant of the origianl matrix in the process
-__device__ void invert(float* data, int actualsize, float* log_determinant)  {
-    int maxsize = actualsize;
-    int n = actualsize;
-    
-    if(threadIdx.x == 0) {
-        *log_determinant = 0.0f;
-      // sanity check        
-      if (actualsize == 1) {
-        *log_determinant = logf(data[0]);
-        data[0] = 1.0 / data[0];
-      } else {
-
-          for (int i=1; i < actualsize; i++) data[i] /= data[0]; // normalize row 0
-          for (int i=1; i < actualsize; i++)  { 
-            for (int j=i; j < actualsize; j++)  { // do a column of L
-              float sum = 0.0f;
-              for (int k = 0; k < i; k++)  
-                  sum += data[j*maxsize+k] * data[k*maxsize+i];
-              data[j*maxsize+i] -= sum;
-              }
-            if (i == actualsize-1) continue;
-            for (int j=i+1; j < actualsize; j++)  {  // do a row of U
-              float sum = 0.0f;
-              for (int k = 0; k < i; k++)
-                  sum += data[i*maxsize+k]*data[k*maxsize+j];
-              data[i*maxsize+j] = 
-                 (data[i*maxsize+j]-sum) / data[i*maxsize+i];
-              }
-            }
-            
-            for(int i=0; i<actualsize; i++) {
-                *log_determinant += logf(fabs(data[i*n+i]));
-            }
-            
-          for ( int i = 0; i < actualsize; i++ )  // invert L
-            for ( int j = i; j < actualsize; j++ )  {
-              float x = 1.0f;
-              if ( i != j ) {
-                x = 0.0f;
-                for ( int k = i; k < j; k++ ) 
-                    x -= data[j*maxsize+k]*data[k*maxsize+i];
-                }
-              data[j*maxsize+i] = x / data[j*maxsize+j];
-              }
-          for ( int i = 0; i < actualsize; i++ )   // invert U
-            for ( int j = i; j < actualsize; j++ )  {
-              if ( i == j ) continue;
-              float sum = 0.0f;
-              for ( int k = i; k < j; k++ )
-                  sum += data[k*maxsize+j]*( (i==k) ? 1.0 : data[i*maxsize+k] );
-              data[i*maxsize+j] = -sum;
-              }
-          for ( int i = 0; i < actualsize; i++ )   // final inversion
-            for ( int j = 0; j < actualsize; j++ )  {
-              float sum = 0.0f;
-              for ( int k = ((i>j)?i:j); k < actualsize; k++ )  
-                  sum += ((j==k)?1.0:data[j*maxsize+k])*data[k*maxsize+i];
-              data[j*maxsize+i] = sum;
-              }
-        }
-    }
-}
 
 __device__ void normalize_pi(components_t* components, int num_components) {
     __shared__ float sum;

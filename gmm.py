@@ -20,21 +20,27 @@ class Components(object):
         self.weights = weights if weights is not None else np.empty(M, dtype=np.float32)
         self.means = means if means is not None else  np.empty(M*D, dtype=np.float32)
         self.covars = covars if covars is not None else  np.empty(M*D*D, dtype=np.float32)
+        self.comp_probs = comp_probs if comp_probs is not None else np.empty(M, dtype=np.float32)
+        
+        def init_random_weights(self):
+            self.weights = numpy.random.random((self.M))
+            
+        def init_random_means(self):
+            self.means = numpy.random.random((self.M,self.D))
+    
+        def init_random_covars(self):
+            self.covars = numpy.random.random((self.M, self.D, self.D))
 
-    def init_random_weights(self):
-        self.weights = numpy.random.random((self.M))
+        def init_random_comp_probs(self):
+            self.comp_probs = numpy.random.random((self.M))
 
-    def init_random_means(self):
-        self.means = numpy.random.random((self.M,self.D))
+        def shrink_components(self, new_M):
+            self.weights = np.resize(self.weights, new_M)
+            self.means = np.resize(self.means, new_M*self.D)
+            self.covars = np.resize(self.covars, new_M*self.D*self.D)
+            self.comp_probs = np.resize(self.comp_probs, new_M)
 
-    def init_random_covars(self):
-        self.covars = numpy.random.random((self.M, self.D, self.D))
-
-    def shrink_components(self, new_M):
-        self.weights = np.resize(self.weights, new_M) 
-        self.means = np.resize(self.means, new_M*self.D) 
-        self.covars = np.resize(self.covars, new_M*self.D*self.D)
-
+            
 class EvalData(object):
 
     def __init__(self, N, M):
@@ -183,18 +189,21 @@ class GMM(object):
     component_data_cpu_copy = None
     eval_data_gpu_copy = None
     eval_data_cpu_copy = None
-
-    #Internal functions to allocate and deallocate component and event data on the CPU and GPU
+    index_list_data_gpu_copy = None
+    index_list_data_cpu_copy = None
+    log_table_allocated = None
+    
+    # internal functions to allocate and deallocate component and event data on the CPU and GPU
     def internal_alloc_event_data(self, X):
-        if not np.array_equal(GMM.event_data_cpu_copy, X) and X is not None:
-            if GMM.event_data_cpu_copy is not None:
-                self.internal_free_event_data()
-            self.get_asp_mod().alloc_events_on_CPU(X)
-            GMM.event_data_cpu_copy = X
-            if self.use_cuda:
-                self.get_asp_mod().alloc_events_on_GPU(X.shape[0], X.shape[1])
-                self.get_asp_mod().copy_event_data_CPU_to_GPU(X.shape[0], X.shape[1])
-                GMM.event_data_gpu_copy = X
+        #if not np.array_equal(GMM.event_data_cpu_copy, X) and X is not None:
+        if GMM.event_data_cpu_copy is not None:
+            self.internal_free_event_data()
+        self.get_asp_mod().alloc_events_on_CPU(X, X.shape[0], X.shape[1])
+        GMM.event_data_cpu_copy = X
+        if self.use_cuda:
+            self.get_asp_mod().alloc_events_on_GPU(X.shape[0], X.shape[1])
+            self.get_asp_mod().copy_event_data_CPU_to_GPU(X.shape[0], X.shape[1])
+            GMM.event_data_gpu_copy = X
 
     def internal_free_event_data(self):
         if self.event_data_cpu_copy is not None:
@@ -204,11 +213,42 @@ class GMM(object):
             self.get_asp_mod().dealloc_events_on_GPU()
             GMM.event_data_gpu_copy = None
 
+    def internal_alloc_event_data_from_index(self, X, I):
+        #if not np.array_equal(GMM.event_data_gpu_copy, X) and X is not None:
+        if GMM.event_data_gpu_copy is not None:
+            self.internal_free_event_data()
+        self.get_asp_mod().alloc_events_from_index_on_CPU(X, I, I.shape[0], X.shape[1])
+        self.get_asp_mod().alloc_events_from_index_on_GPU(I.shape[0], X.shape[1])
+        self.get_asp_mod().copy_events_from_index_CPU_to_GPU(I.shape[0], X.shape[1])
+        GMM.event_data_gpu_copy = X
+        GMM.event_data_cpu_copy = X
+                                                                    
+            
+    # allocate index list for accessing subset of events
+    def internal_alloc_index_list_data(self, X):
+        if not np.array_equal(GMM.index_list_data_gpu_copy, X) and X is not None:
+            if GMM.index_list_data_gpu_copy is not None:
+                self.internal_free_index_list_data()
+            self.get_asp_mod().alloc_index_list_on_CPU(X)
+            self.get_asp_mod().alloc_index_list_on_GPU(X.shape[0])
+            self.get_asp_mod().copy_index_list_data_CPU_to_GPU(X.shape[0])
+            GMM.index_list_data_gpu_copy = X
+            GMM.index_list_data_cpu_copy = X
+                
+    def internal_free_index_list_data(self):
+        if GMM.index_list_data_gpu_copy is not None:
+            self.get_asp_mod().dealloc_index_list_on_GPU()
+            GMM.index_list_data_gpu_copy = None
+        if self.index_list_data_cpu_copy is not None:
+            self.get_asp_mod().dealloc_index_list_on_CPU()
+            GMM.index_list_data_cpu_copy = None
+                
+            
     def internal_alloc_component_data(self):
         if GMM.component_data_cpu_copy != self.components:
             if GMM.component_data_cpu_copy:
                 self.internal_free_component_data()
-            self.get_asp_mod().alloc_components_on_CPU(self.M, self.D, self.components.weights, self.components.means, self.components.covars)
+            self.get_asp_mod().alloc_components_on_CPU(self.M, self.D, self.components.weights, self.components.means, self.components.covars, self.components.comp_probs)
             GMM.component_data_cpu_copy = self.components
             if self.use_cuda:
                 self.get_asp_mod().alloc_components_on_GPU(self.M, self.D)
@@ -229,12 +269,23 @@ class GMM(object):
                 if GMM.eval_data_cpu_copy is not None:
                     self.internal_free_eval_data()
                 self.eval_data.resize(X.shape[0], self.M)
-                self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
+                self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods, X.shape[0], self.M)
+#                self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
                 GMM.eval_data_cpu_copy = self.eval_data
                 if self.use_cuda:
                     self.get_asp_mod().alloc_evals_on_GPU(X.shape[0], self.M)
                     GMM.eval_data_gpu_copy = self.eval_data
-            
+
+    def internal_alloc_eval_data_from_index(self, X, length):
+        if X is not None:
+            if GMM.eval_data_gpu_copy is not None:
+                self.internal_free_eval_data()
+            self.eval_data.resize(X.shape[0], self.M)
+            self.get_asp_mod().alloc_evals_on_GPU(length, self.M)
+            self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
+            GMM.eval_data_gpu_copy = self.eval_data
+            GMM.eval_data_cpu_copy = self.eval_data
+
     def internal_free_eval_data(self):
         if GMM.eval_data_cpu_copy is not None:
             self.get_asp_mod().dealloc_evals_on_CPU()
@@ -243,15 +294,20 @@ class GMM(object):
             self.get_asp_mod().dealloc_evals_on_GPU()
             GMM.eval_data_gpu_copy = None
 
+    def internal_seed_data(self, X, D, N):
+        self.get_asp_mod().seed_components(self.M, D, N)
+        self.components_seeded = True
+
+
     def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='full', names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
         self.M = M
         self.D = D
         self.cvtype = cvtype
         self.variant_param_spaces = variant_param_spaces or GMM.variant_param_defaults
+        self.names_of_backends_to_use = names_of_backends_to_use
         self.components = Components(M, D, weights, means, covars)
         self.eval_data = EvalData(1, M)
         self.clf = None # pure python mirror module
-
         self.use_cuda = False
         self.use_cilk = False
         if 'cuda' in names_of_backends_to_use:
@@ -266,10 +322,17 @@ class GMM(object):
                 self.cuda_info = GMM.platform.get_cuda_info()
             else: print "WARNING: You asked for a CUDA backend but no compiler was found."
         if 'cilk' in names_of_backends_to_use:
+
             if 'icc' in GMM.platform.get_compilers():
                 self.use_cilk = True
             else: print "WARNING: You asked for a Cilk backend but no compiler was found."
 
+        if means is None and covars is None and weights is None:
+            self.components_seeded = False
+        else:
+            self.components_seeded = True
+
+            
     #Called the first time a GMM instance tries to use a specialized function
     def initialize_asp_mod(self):
         # Create ASP module
@@ -278,6 +341,7 @@ class GMM(object):
         if self.use_cuda:
             self.insert_base_code_into_listed_modules(['c++'])
             self.insert_non_rendered_code_into_cuda_module()
+
             self.insert_rendered_code_into_module('cuda')
             #GMM.asp_mod.backends['c++'].toolchain.cc = 'gcc'
             #GMM.asp_mod.backends['c++'].toolchain.cflags.append('-fPIC')
@@ -303,16 +367,18 @@ class GMM(object):
     def insert_base_code_into_listed_modules(self, names_of_backends):
         c_base_tpl = AspTemplate.Template(filename="templates/em_base_helper_funcs.mako")
         c_base_rend = c_base_tpl.render()
-        component_t_decl =""" 
+        component_t_decl ="""
             typedef struct components_struct {
                 float* N;        // expected # of pixels in component: [M]
                 float* pi;       // probability of component in GMM: [M]
+                float* CP; //cluster probability [M]
                 float* constant; // Normalizing constant [M]
                 float* avgvar;    // average variance [M]
                 float* means;   // Spectral mean for the component: [M*D]
                 float* R;      // Covariance matrix: [M*D*D]
                 float* Rinv;   // Inverse of covariance matrix: [M*D*D]
             } components_t;"""
+
         base_system_header_names = [ 'stdlib.h', 'stdio.h', 'string.h', 'math.h', 'time.h', 'numpy/arrayobject.h']
         for b_name in names_of_backends:
             for header in base_system_header_names: 
@@ -337,6 +403,7 @@ class GMM(object):
             typedef struct components_struct {
                 float* N;        // expected # of pixels in component: [M]
                 float* pi;       // probability of component in GMM: [M]
+                float* CP; //cluster probability [M]
                 float* constant; // Normalizing constant [M]
                 float* avgvar;    // average variance [M]
                 float* means;   // Spectral mean for the component: [M*D]
@@ -358,7 +425,7 @@ class GMM(object):
         cu_base_rend = cu_base_tpl.render()
         GMM.asp_mod.add_to_module([Line(cu_base_rend)],'cuda')
         #Add Boost interface links for helper functions
-        names_of_helper_funcs = ["alloc_events_on_GPU","alloc_components_on_GPU","alloc_evals_on_GPU","copy_event_data_CPU_to_GPU", "copy_component_data_CPU_to_GPU", "copy_component_data_GPU_to_CPU", "copy_evals_data_GPU_to_CPU","dealloc_events_on_GPU","dealloc_components_on_GPU", "dealloc_evals_on_GPU"]
+        names_of_helper_funcs = ["alloc_events_on_GPU","alloc_index_list_on_GPU", "alloc_events_from_index_on_GPU", "alloc_components_on_GPU","alloc_evals_on_GPU","copy_event_data_CPU_to_GPU", "copy_index_list_data_CPU_to_GPU", "copy_events_from_index_CPU_to_GPU", "copy_component_data_CPU_to_GPU", "copy_component_data_GPU_to_CPU", "copy_evals_CPU_to_GPU", "copy_evals_data_GPU_to_CPU","dealloc_events_on_GPU","dealloc_components_on_GPU", "dealloc_evals_on_GPU", "dealloc_index_list_on_GPU"]
         for fname in names_of_helper_funcs:
             GMM.asp_mod.add_helper_function(fname,"",'cuda')
 
@@ -367,6 +434,7 @@ class GMM(object):
             typedef struct components_struct {
                 float* N;        // expected # of pixels in component: [M]
                 float* pi;       // probability of component in GMM: [M]
+                float* CP; //cluster probability [M]
                 float* constant; // Normalizing constant [M]
                 float* avgvar;    // average variance [M]
                 float* means;   // Spectral mean for the component: [M*D]
@@ -394,6 +462,7 @@ class GMM(object):
         def var_name_generator(base):
             return '_'.join(['em',backend_name,base]+param_val_list)
         if can_be_compiled: 
+
             c_tpl = AspTemplate.Template(filename='_'.join(["templates/em",backend_name,func_name+".mako"]))
             func_body = c_tpl.render( param_val_list = param_val_list, **param_dict)
         else:
@@ -478,9 +547,60 @@ class GMM(object):
         self.internal_alloc_event_data(input_data)
         self.internal_alloc_eval_data(input_data)
         self.internal_alloc_component_data()
+
         self.eval_data.likelihood = getattr(self.get_asp_mod(),'train_'+self.cvtype)(self.M, self.D, N, min_iters, max_iters)[0]
+
+        if not self.components_seeded:
+            self.internal_seed_data(input_data, input_data.shape[1], input_data.shape[0])
+            
         return self
 
+
+        #TODO: expose only one function to the domain programmer
+        #handle selection of gather mechanisms internally
+
+        #train on subset
+        #collect indices in python
+        #gather in CUDA
+    def train_on_subset(self, input_data, index_list):
+        N = input_data.shape[0]
+        K = index_list.shape[0] #number of indices
+        
+        if input_data.shape[1] != self.D:
+            print "Error: Data has %d features, model expects %d features." % (input_data.shape[1], self.D)
+        self.internal_alloc_event_data(input_data)
+        self.internal_alloc_index_list_data(index_list)
+        self.internal_alloc_eval_data(input_data)
+        self.internal_alloc_component_data()
+        
+        if not self.components_seeded:
+            self.internal_seed_data(input_data, input_data.shape[1], input_data.shape[0])
+            
+        self.eval_data.likelihood = self.get_asp_mod().train_on_subset(self.M, self.D, N, K)[0]
+        return self
+        
+        
+        #train on subset
+        #collect indices in python
+        #gather in C
+    def train_on_subset_c(self, input_data, index_list):
+        N = input_data.shape[0]
+        K = index_list.shape[0] #number of indices
+        
+        if input_data.shape[1] != self.D:
+            print "Error: Data has %d features, model expects %d features." % (input_data.shape[1], self.D)
+            
+        self.internal_alloc_event_data_from_index(input_data, index_list)
+        self.internal_alloc_eval_data(input_data)
+        self.internal_alloc_component_data()
+            
+        if not self.components_seeded:
+            self.internal_seed_data(input_data, input_data.shape[1], K)
+
+        self.eval_data.likelihood = self.get_asp_mod().train(self.M, self.D, K)[0]
+        return self
+            
+    
     def eval(self, obs_data):
         N = obs_data.shape[0]
         if obs_data.shape[1] != self.D:
@@ -488,7 +608,9 @@ class GMM(object):
         self.internal_alloc_event_data(obs_data)
         self.internal_alloc_eval_data(obs_data)
         self.internal_alloc_component_data()
+
         self.eval_data.likelihood = getattr(self.get_asp_mod(),'eval_'+self.cvtype)(self.M, self.D, N)
+
         logprob = self.eval_data.loglikelihoods
         posteriors = self.eval_data.memberships
         return logprob, posteriors # N log probabilities, NxM posterior probabilities for each component
@@ -518,6 +640,34 @@ class GMM(object):
         dist = self.get_asp_mod().compiled_module.component_distance.distance
         return new_component, dist
 
+
+    def find_top_KL_pairs(self, K, gmm_list):
+        if GMM.log_table_allocated is None:
+            self.get_asp_mod().create_lut_log_table()
+            GMM.log_table_allocated = 1
+            
+        l = len(gmm_list)
+        score_list = []
+        for gmm1idx in range(l):
+            for gmm2idx in range(gmm1idx+1, l):
+                score = self.get_asp_mod().compute_KL_distance(gmm_list[gmm1idx].D, gmm_list[gmm1idx].M, gmm_list[gmm2idx].M, gmm_list[gmm1idx].components.weights, gmm_list[gmm1idx].components.means, gmm_list[gmm1idx].components.covars,gmm_list[gmm1idx].components.comp_probs, gmm_list[gmm2idx].components.weights, gmm_list[gmm2idx].components.means, gmm_list[gmm2idx].components.covars, gmm_list[gmm2idx].components.comp_probs)
+                score_list.append((score, (gmm1idx,gmm2idx)))
+
+        sorted_list = sorted(score_list, key=lambda score: score[0])
+        ret_list = []
+        if K==-1: #all
+            for k in range(len(sorted_list)):
+                ret_list.append(sorted_list[k][1])
+        else:
+            if(len(gmm_list)>=K):
+                for k in range(0,K):
+                    ret_list.append(sorted_list[k][1])
+            else:
+                for k in range(0,len(gmm_list)-1):
+                    ret_list.append(sorted_list[k][1])
+        return ret_list
+                            
+
 def compute_distance_BIC(gmm1, gmm2, data):
     cd1_M = gmm1.M
     cd2_M = gmm2.M
@@ -529,8 +679,30 @@ def compute_distance_BIC(gmm1, gmm2, data):
     w = np.append(ratio1*gmm1.components.weights, ratio2*gmm2.components.weights)
     m = np.append(gmm1.components.means, gmm2.components.means)
     c = np.append(gmm1.components.covars, gmm2.components.covars)
+
     temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c)
+
     temp_GMM.train(data)
     score = temp_GMM.eval_data.likelihood - (gmm1.eval_data.likelihood + gmm2.eval_data.likelihood)
     return temp_GMM, score
+
+def compute_distance_BIC_idx(gmm1, gmm2, data, index_list):
+    cd1_M = gmm1.M
+    cd2_M = gmm2.M
+    nComps = cd1_M + cd2_M
+    
+    ratio1 = float(cd1_M)/float(nComps)
+    ratio2 = float(cd2_M)/float(nComps)
+    
+    w = np.append(ratio1*gmm1.components.weights, ratio2*gmm2.components.weights)
+    m = np.append(gmm1.components.means, gmm2.components.means)
+    c = np.append(gmm1.components.covars, gmm2.components.covars)
+    temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c, names_of_backends_to_use=gmm1.names_of_backends_to_use, variant_param_spaces=gmm1.variant_param_spaces, device_id=gmm1.device_id)
+    
+    temp_GMM.train_on_subset_c(data, index_list)
+    
+    score = temp_GMM.eval_data.likelihood - (gmm1.eval_data.likelihood + gmm2.eval_data.likelihood)
+    
+    return temp_GMM, score
+
 

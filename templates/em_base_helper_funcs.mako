@@ -1,5 +1,7 @@
 #define PI  3.1415926535897931
 #define COVARIANCE_DYNAMIC_RANGE 1E6
+#define MINVALUEFORMINUSLOG -1000.0
+
 
 typedef struct return_component_container
 {
@@ -14,6 +16,10 @@ ret_c_con_t ret;
 //CPU copies of events
 float *fcs_data_by_event;
 float *fcs_data_by_dimension;
+
+// index list for train_on_subset
+int* index_list;
+
 
 //CPU copies of components
 components_t components;
@@ -36,24 +42,62 @@ void printCluster(components_t components, int c, int num_dimensions);
 void invert_cpu(float* data, int actualsize, float* log_determinant);
 int  invert_matrix(float* a, int n, float* determinant);
 
+//============ LUTLOG ==============
+
+float *LOOKUP_TABLE;
+int N_LOOKUP_SIZE = 12;
+
+void do_table(int n,float *lookup_table)
+{
+  float numlog;
+  int *const exp_ptr = ((int*)&numlog);
+  int x = *exp_ptr;
+  x = 0x00000000;
+  x += 127 << 23;
+  *exp_ptr = x;
+  for(int i=0;i<pow((double) 2,(double) n);i++)
+    {
+      lookup_table[i]=log2(numlog);
+      x+=1 << (23-n);
+      *exp_ptr = x;
+    }
+}
+
+void create_lut_log_table() {
+
+  unsigned int tablesize = (unsigned int)pow(2.0, 12);
+  LOOKUP_TABLE = (float*) malloc(tablesize*sizeof(float));
+  do_table(N_LOOKUP_SIZE,LOOKUP_TABLE);
+
+}
+
+//================ END LUTLOG ============
+
+
 //=== Memory Alloc/Free Functions ===
 
 components_t* alloc_temp_component_on_CPU(int num_dimensions) {
+
   components_t* scratch_component = (components_t*)malloc(sizeof(components_t));
+
   scratch_component->N = (float*) malloc(sizeof(float));
   scratch_component->pi = (float*) malloc(sizeof(float));
+  scratch_component->CP = (float*) malloc(sizeof(float));
   scratch_component->constant = (float*) malloc(sizeof(float));
   scratch_component->avgvar = (float*) malloc(sizeof(float));
   scratch_component->means = (float*) malloc(sizeof(float)*num_dimensions);
   scratch_component->R = (float*) malloc(sizeof(float)*num_dimensions*num_dimensions);
   scratch_component->Rinv = (float*) malloc(sizeof(float)*num_dimensions*num_dimensions);
+
   return scratch_component;
 }
 
 void dealloc_temp_components_on_CPU() {
+  printf("dealloc tempcomponents on CPU\n");
   for(int i = 0; i<num_scratch_components; i++) {
     free(scratch_component_arr[i]->N);
     free(scratch_component_arr[i]->pi);
+    free(scratch_component_arr[i]->CP);
     free(scratch_component_arr[i]->constant);
     free(scratch_component_arr[i]->avgvar);
     free(scratch_component_arr[i]->means);
@@ -61,7 +105,10 @@ void dealloc_temp_components_on_CPU() {
     free(scratch_component_arr[i]->Rinv);
   }
   num_scratch_components = 0;
+
+  return;
 }
+
 
 // ================== Event data allocation on CPU  ================= :
 void alloc_events_on_CPU(PyObject *input_data) {
@@ -70,7 +117,7 @@ void alloc_events_on_CPU(PyObject *input_data) {
   int num_events = PyArray_DIM(input_data,0);
   int num_dimensions = PyArray_DIM(input_data,1);
   // Transpose the event data (allows coalesced access pattern in E-step kernel)
-  // This has consecutive values being from the same dimension of the data 
+  // This has consecutive values being from the same dimension of the data
   // (num_dimensions by num_events matrix)
   fcs_data_by_dimension  = (float*) malloc(sizeof(float)*num_events*num_dimensions);
 
@@ -81,8 +128,30 @@ void alloc_events_on_CPU(PyObject *input_data) {
   }
 }
 
+void alloc_index_list_on_CPU(pyublas::numpy_vector<int> input_index_list) {
+  index_list = input_index_list.data().data();
+}
+
+void alloc_events_from_index_on_CPU(pyublas::numpy_vector<float> input_data, pyublas::numpy_vector<int> indices, int num_indices, int num_dimensions) {
+
+  fcs_data_by_event = (float*)malloc(num_indices*num_dimensions*sizeof(int));
+  for(int i = 0; i<num_indices; i++) {
+    for(int d = 0; d<num_dimensions; d++) {
+      fcs_data_by_event[i*num_dimensions+d] = input_data[indices[i]*num_dimensions+d];
+    }
+  }
+
+  fcs_data_by_dimension = (float*)malloc(num_indices*num_dimensions*sizeof(int));
+  for(int e=0; e<num_indices; e++) {
+    for(int d = 0; d<num_dimensions; d++) {
+      fcs_data_by_dimension[d*num_indices+e] = fcs_data_by_event[e*num_dimensions+d];
+      //printf("data: %f\n", fcs_data_by_dimension[d*num_indices+e]);
+    }
+  }
+}
 
 // ================== Cluster data allocation on CPU  ================= :
+
 void alloc_components_on_CPU(int M, int D, PyObject *weights, PyObject *means, PyObject *covars) {
   components.pi = ((float*)PyArray_DATA(weights));
   components.means = ((float*)PyArray_DATA(means));
@@ -102,6 +171,7 @@ void relink_components_on_CPU(PyObject *weights, PyObject *means, PyObject *cova
 }
 
 // ================= Eval data alloc on CPU =============== 
+
 void alloc_evals_on_CPU(PyObject *component_mem_np_arr, PyObject *loglikelihoods_np_arr){
   component_memberships = ((float*)PyArray_DATA(component_mem_np_arr));
   loglikelihoods = ((float*)PyArray_DATA(loglikelihoods_np_arr));
@@ -111,24 +181,36 @@ void alloc_evals_on_CPU(PyObject *component_mem_np_arr, PyObject *loglikelihoods
 void dealloc_events_on_CPU() {
   //free(fcs_data_by_event);
   free(fcs_data_by_dimension);
+  return;
+}
+
+// ================== Index list dellocation on CPU  ================= :
+void dealloc_index_list_on_CPU() {
+  free(index_list);
+  return;
 }
 
 // ==================== Cluster data deallocation on CPU =================  
 void dealloc_components_on_CPU() {
+
   //free(components.pi);
   //free(components.means);
   //free(components.R);
+  //free(components.CP);
   free(components.N);
   free(components.constant);
   free(components.avgvar);
   free(components.Rinv);
+  return;
 }
 
 // ==================== Eval data deallocation on CPU =================  
 void dealloc_evals_on_CPU() {
   //free(component_memberships);
   //free(loglikelihoods);
+  return;
 }
+
 
 // ==== Accessor functions for pi, means, covars ====
 
@@ -148,6 +230,158 @@ PyObject *get_temp_component_covars(components_t* c, int D){
 }
 
 //------------------------- AHC FUNCTIONS ----------------------------
+
+//============ KL DISTANCE FUNCTIONS =============
+inline float lut_log (float val, float *lookup_table, int n)
+{
+  int *const     exp_ptr = ((int*)&val);
+  int            x = *exp_ptr;
+  const int      log_2 = ((x >> 23) & 255) - 127;
+  x &= 0x7FFFFF;
+  x = x >> (23-n);
+  val=lookup_table[x];
+  // printf("log2:%f\n", log_2);
+  return ((val + log_2)* 0.69314718);
+
+}
+
+// sequentuially add logarithms
+float Log_Add(float log_a, float log_b)
+{
+  float result;
+  if(log_a < log_b)
+    {
+      float tmp = log_a;
+      log_a = log_b;
+      log_b = tmp;
+    }
+  //setting MIN...LOG so small, I don't even need to look
+  if((log_b - log_a) <= MINVALUEFORMINUSLOG)
+    {
+      return log_a;
+    }
+  else
+    {
+      result = log_a + (float)(lut_log(1.0 + (double)(exp((double)(log_b - log_a))),LOOKUP_TABLE,N_LOOKUP_SIZE));
+    }
+  return result;
+}
+
+double Log_Likelihood(int DIM, int m, float *feature, float *means, float *covars, float CP)
+{
+  //float log_lkld;
+  //float in_the_exp = 0.0, den = 0.0;
+  double x,y=0,z;
+  for(int i=0; i<DIM; i++)
+    {
+      x = feature[i]-means[DIM*m + i];
+      z = covars[m*DIM*DIM + i*DIM+i];
+      y += x*x/z;//+lut_log(2*3.141592654*z,LOOKUP_TABLE,N_LOOKUP_SIZE); LINE MODIFIED
+      // printf("y = %f, feature[%d]  = %f, mean[%d] = %f \n", y, i, feature[i], i, means[i*m+i], m*DIM*DIM+i*DIM+i, cov\
+      ars[m*DIM*DIM + i*DIM+i]);
+}
+//printf("y  = %f, CP  = %f\n", y, CP);
+return((double)-0.5*(y+CP)); //LINE MODIFIED
+}
+
+
+float Log_Likelihood_KL(float *feature, int DIM, int gmm_M, float *gmm_weights, float *gmm_means, float *gmm_covars, float *gmm_CP)
+{
+
+  //float res = 0.0;
+  float log_lkld= MINVALUEFORMINUSLOG ,aux;
+  for(int i=0;i<gmm_M;i++)
+    {
+      // if(gmm_weights[i])
+      // {
+      aux = lut_log(gmm_weights[i],LOOKUP_TABLE,N_LOOKUP_SIZE) + Log_Likelihood(DIM, i, feature, gmm_means, gmm_covars, gmm_CP[i]);
+
+
+      if(isnan(aux) || !finite(aux))
+        {
+          aux = MINVALUEFORMINUSLOG;
+        }
+      log_lkld = Log_Add(log_lkld, aux);
+      //}
+    }//for
+  return log_lkld;
+}
+
+
+float compute_KL_distance(int DIM, int gmm1_M, int gmm2_M, pyublas::numpy_vector<float> gmm1_weights_in, pyublas::numpy_vector<float> gmm1_means_in, pyublas::numpy_vector<float> gmm1_covars_in, pyublas::numpy_vector<float> gmm1_CP_in, pyublas::numpy_vector<float> gmm2_weights_in, pyublas::numpy_vector<float> gmm2_means_in, pyublas::numpy_vector<float> gmm2_covars_in, pyublas::numpy_vector<float> gmm2_CP_in) {
+
+  float aux;
+  float log_g1,log_f1,log_g2,log_f2,f_log_g=0,f_log_f=0,g_log_f=0,g_log_g=0;
+  float *point_a = new float[DIM];
+  float *point_b = new float[DIM];
+
+  float *gmm1_weights = gmm1_weights_in.data().data();
+  float *gmm1_means = gmm1_means_in.data().data();
+  float *gmm1_covars = gmm1_covars_in.data().data();
+  float *gmm1_CP = gmm1_CP_in.data().data();
+  float *gmm2_weights = gmm2_weights_in.data().data();
+  float *gmm2_means = gmm2_means_in.data().data();
+  float *gmm2_covars = gmm2_covars_in.data().data();
+  float *gmm2_CP = gmm2_CP_in.data().data();
+
+  for(int i=0;i<gmm1_M;i++)
+    {
+      log_g1=0;
+      log_f1=0;
+      for(int k=0;k<DIM;k++)
+        {
+          //Compute the two points
+          for(int j=0;j<DIM;j++)
+            {
+              if(j==k){
+                aux = sqrt(19.0)*sqrt(gmm1_covars[i*DIM*DIM + k*DIM+k]);
+                point_a[j] = gmm1_means[i*DIM+j] + aux;
+                point_b[j] = gmm1_means[i*DIM+j] - aux;
+              }
+              else{
+                point_a[j] = gmm1_means[i*DIM+j];
+                point_b[j] = gmm1_means[i*DIM+j];
+              }
+            }
+          log_g1+=Log_Likelihood_KL(point_a, DIM, gmm2_M, gmm2_weights, gmm2_means, gmm2_covars, gmm2_CP)+Log_Likelihood_KL(point_b, DIM, gmm2_M, gmm2_weights, gmm2_means, gmm2_covars, gmm2_CP);
+          log_f1+=Log_Likelihood_KL(point_a, DIM, gmm1_M, gmm1_weights, gmm1_means, gmm1_covars, gmm1_CP)+Log_Likelihood_KL(point_b, DIM, gmm1_M, gmm1_weights, gmm1_means, gmm1_covars, gmm1_CP);
+        }
+
+      f_log_g+=gmm1_weights[i]*log_g1;
+      f_log_f+=gmm1_weights[i]*log_f1;
+
+    }
+  for(int i=0;i<gmm2_M;i++)
+    {
+      log_g2=0;
+      log_f2=0;
+      for(int k=0;k<DIM;k++)
+        {
+          for(int j=0;j<DIM;j++)
+            {
+              if(j==k){
+                aux = sqrt(19.0)*sqrt(gmm2_covars[i*DIM*DIM + k*DIM+k]);
+                point_a[j] = gmm2_means[i*DIM+j] + aux;
+                point_b[j] = gmm2_means[i*DIM+j] - aux;
+              }
+              else{
+                point_a[j] = gmm2_means[i*DIM+j];
+                point_b[j] = gmm2_means[i*DIM+j];
+              }
+            }
+
+          log_g2+=Log_Likelihood_KL(point_a, DIM, gmm2_M, gmm2_weights, gmm2_means, gmm2_covars, gmm2_CP)+Log_Likelihood_KL(point_b, DIM, gmm2_M, gmm2_weights, gmm2_means, gmm2_covars, gmm2_CP);
+          log_f2+=Log_Likelihood_KL(point_a, DIM, gmm1_M, gmm1_weights, gmm1_means, gmm1_covars, gmm1_CP)+Log_Likelihood_KL(point_b, DIM, gmm1_M, gmm1_weights, gmm1_means, gmm1_covars, gmm1_CP);
+        }
+      g_log_g+=gmm2_weights[i]*log_g2;
+      g_log_f+=gmm2_weights[i]*log_f2;
+
+    }
+  delete [] point_a;
+  delete [] point_b;
+  return 1.0/(2.0*DIM)*(f_log_f + g_log_g - f_log_g - g_log_f);
+}
+
 
 int compute_distance_rissanen(int c1, int c2, int num_dimensions) {
   // compute distance function between the 2 components

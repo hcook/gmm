@@ -22,10 +22,12 @@ def generate_synthetic_data(N):
 
 class EMTester(object):
 
+
     def __init__(self, from_file, device_id, num_subps):
         self.results = {}
         self.device_id = device_id
         self.num_subplots = num_subps
+        self.names_of_backends = names_of_backends
         self.plot_id = num_subps/2*100 + 21
         if from_file:
             self.X = np.ndfromtxt('IS1000a.csv', delimiter=',', dtype=np.float32)
@@ -39,11 +41,13 @@ class EMTester(object):
 
     def new_gmm(self, M):
         self.M = M
+
         self.gmm = GMM(self.M, self.D, device_id=self.device_id)
 
     def new_gmm_list(self, M, k):
         self.M = M
         self.init_num_clusters = k
+
         self.gmm_list = [GMM(self.M, self.D, device_id=self.device_id) for i in range(k)]
 
     def test_speech_ahc(self):
