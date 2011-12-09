@@ -20,7 +20,7 @@ class Components(object):
         self.weights = weights if weights is not None else np.empty(M, dtype=np.float32)
         self.means = means if means is not None else  np.empty(M*D, dtype=np.float32)
         self.covars = covars if covars is not None else  np.empty(M*D*D, dtype=np.float32)
-        self.comp_probs = comp_probs if comp_probs is not None else np.empty(M, dtype=np.float32)
+        self.comp_probs = np.empty(M, dtype=np.float32)
         
         def init_random_weights(self):
             self.weights = numpy.random.random((self.M))
@@ -31,14 +31,10 @@ class Components(object):
         def init_random_covars(self):
             self.covars = numpy.random.random((self.M, self.D, self.D))
 
-        def init_random_comp_probs(self):
-            self.comp_probs = numpy.random.random((self.M))
-
         def shrink_components(self, new_M):
             self.weights = np.resize(self.weights, new_M)
             self.means = np.resize(self.means, new_M*self.D)
             self.covars = np.resize(self.covars, new_M*self.D*self.D)
-            self.comp_probs = np.resize(self.comp_probs, new_M)
 
             
 class EvalData(object):
@@ -198,7 +194,7 @@ class GMM(object):
         #if not np.array_equal(GMM.event_data_cpu_copy, X) and X is not None:
         if GMM.event_data_cpu_copy is not None:
             self.internal_free_event_data()
-        self.get_asp_mod().alloc_events_on_CPU(X, X.shape[0], X.shape[1])
+        self.get_asp_mod().alloc_events_on_CPU(X)
         GMM.event_data_cpu_copy = X
         if self.use_cuda:
             self.get_asp_mod().alloc_events_on_GPU(X.shape[0], X.shape[1])
@@ -269,7 +265,7 @@ class GMM(object):
                 if GMM.eval_data_cpu_copy is not None:
                     self.internal_free_eval_data()
                 self.eval_data.resize(X.shape[0], self.M)
-                self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods, X.shape[0], self.M)
+                self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
 #                self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
                 GMM.eval_data_cpu_copy = self.eval_data
                 if self.use_cuda:
@@ -295,11 +291,11 @@ class GMM(object):
             GMM.eval_data_gpu_copy = None
 
     def internal_seed_data(self, X, D, N):
-        self.get_asp_mod().seed_components(self.M, D, N)
+        getattr(self.get_asp_mod(),'seed_components_'+self.cvtype)(self.M, D, N)
         self.components_seeded = True
 
 
-    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='full', names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
+    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='diag', names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
         self.M = M
         self.D = D
         self.cvtype = cvtype
@@ -425,7 +421,7 @@ class GMM(object):
         cu_base_rend = cu_base_tpl.render()
         GMM.asp_mod.add_to_module([Line(cu_base_rend)],'cuda')
         #Add Boost interface links for helper functions
-        names_of_helper_funcs = ["alloc_events_on_GPU","alloc_index_list_on_GPU", "alloc_events_from_index_on_GPU", "alloc_components_on_GPU","alloc_evals_on_GPU","copy_event_data_CPU_to_GPU", "copy_index_list_data_CPU_to_GPU", "copy_events_from_index_CPU_to_GPU", "copy_component_data_CPU_to_GPU", "copy_component_data_GPU_to_CPU", "copy_evals_CPU_to_GPU", "copy_evals_data_GPU_to_CPU","dealloc_events_on_GPU","dealloc_components_on_GPU", "dealloc_evals_on_GPU", "dealloc_index_list_on_GPU"]
+        names_of_helper_funcs = ["alloc_events_on_GPU","alloc_index_list_on_GPU", "alloc_events_from_index_on_GPU", "alloc_components_on_GPU","alloc_evals_on_GPU","copy_event_data_CPU_to_GPU", "copy_index_list_data_CPU_to_GPU", "copy_events_from_index_CPU_to_GPU", "copy_component_data_CPU_to_GPU", "copy_component_data_GPU_to_CPU", "copy_evals_CPU_to_GPU", "copy_evals_data_GPU_to_CPU","dealloc_events_on_GPU","dealloc_components_on_GPU", "dealloc_evals_on_GPU", "dealloc_index_list_on_GPU", "create_lut_log_table", "compute_KL_distance"]
         for fname in names_of_helper_funcs:
             GMM.asp_mod.add_helper_function(fname,"",'cuda')
 
@@ -498,7 +494,7 @@ class GMM(object):
         import hashlib
         key_func = lambda *args, **kwargs: hashlib.md5(str([args[0],args[1],math.floor(math.log10(args[2]))])+str(kwargs)).hexdigest()
         for cvtype in ['diag', 'full']:
-            func_names = ['train', 'eval']
+            func_names = ['train', 'eval', 'seed_components']
             all_variants = {}
             self.generate_permutations( self.variant_param_spaces[backend_name].keys(),
                                         self.variant_param_spaces[backend_name].values(), {}, 
@@ -552,7 +548,10 @@ class GMM(object):
 
         if not self.components_seeded:
             self.internal_seed_data(input_data, input_data.shape[1], input_data.shape[0])
-            
+
+        self.components.means = self.components.means.reshape(self.M, self.D)
+        self.components.covars = self.components.covars.reshape(self.M, self.D, self.D)
+        
         return self
 
 
