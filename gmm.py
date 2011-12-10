@@ -49,7 +49,7 @@ class EvalData(object):
     def resize(self, N, M):
         self.memberships.resize((M,N))
         self.memberships = np.ascontiguousarray(self.memberships)
-        self.loglikelihoods.resize(N)
+        self.loglikelihoods.resize(N, refcheck=False)
         self.loglikelihoods = np.ascontiguousarray(self.loglikelihoods)
         self.M = M
         self.N = N
@@ -295,10 +295,14 @@ class GMM(object):
         self.components_seeded = True
 
 
-    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='diag', names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
+    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype=1, names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
         self.M = M
         self.D = D
-        self.cvtype = cvtype
+        if cvtype == 1:
+            self.cvtype = 'diag'
+        else:
+            self.cvtype = 'full'
+
         self.variant_param_spaces = variant_param_spaces or GMM.variant_param_defaults
         self.names_of_backends_to_use = names_of_backends_to_use
         self.components = Components(M, D, weights, means, covars)
@@ -536,18 +540,18 @@ class GMM(object):
             return self.clf.predict(obs_data)
         else: return []
 
-    def train(self, input_data, min_iters=1, max_iters=10):
+    def train(self, input_data, min_em_iters=1, max_em_iters=10):
         N = input_data.shape[0] 
         if input_data.shape[1] != self.D:
             print "Error: Data has %d features, model expects %d features." % (input_data.shape[1], self.D)
         self.internal_alloc_event_data(input_data)
         self.internal_alloc_eval_data(input_data)
         self.internal_alloc_component_data()
-
-        self.eval_data.likelihood = getattr(self.get_asp_mod(),'train_'+self.cvtype)(self.M, self.D, N, min_iters, max_iters)[0]
-
+        
         if not self.components_seeded:
             self.internal_seed_data(input_data, input_data.shape[1], input_data.shape[0])
+
+        self.eval_data.likelihood = getattr(self.get_asp_mod(),'train_'+self.cvtype)(self.M, self.D, N, min_em_iters, max_em_iters)[0]
 
         self.components.means = self.components.means.reshape(self.M, self.D)
         self.components.covars = self.components.covars.reshape(self.M, self.D, self.D)
@@ -667,7 +671,7 @@ class GMM(object):
         return ret_list
                             
 
-def compute_distance_BIC(gmm1, gmm2, data):
+def compute_distance_BIC(gmm1, gmm2, data, em_iters):
     cd1_M = gmm1.M
     cd2_M = gmm2.M
     nComps = cd1_M + cd2_M
@@ -681,7 +685,7 @@ def compute_distance_BIC(gmm1, gmm2, data):
 
     temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c)
 
-    temp_GMM.train(data)
+    temp_GMM.train(data, max_em_iters=em_iters)
     score = temp_GMM.eval_data.likelihood - (gmm1.eval_data.likelihood + gmm2.eval_data.likelihood)
     return temp_GMM, score
 

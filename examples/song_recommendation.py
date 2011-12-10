@@ -17,7 +17,7 @@ import random as rnd
 import cPickle as pickle
 import operator
 
-from em import *
+from gmm import *
 
 def get_song_dict():
     fileList = []
@@ -187,7 +187,7 @@ if __name__ == '__main__':
 
     # train UBM on features
     D = total_ubm_features.shape[1]
-    ubm = GMM(M,D)
+    ubm = GMM(M,D,cvtype=1)
     
     train_st = time.time()
     ubm.train(training_ubm_features)
@@ -196,7 +196,7 @@ if __name__ == '__main__':
     
     # train positive GMM on features
     D = total_features.shape[1]
-    gmm = GMM(M, D, means=np.array(ubm.components.means), covars=np.array(ubm.components.covars), weights=np.array(ubm.components.weights))
+    gmm = GMM(M, D, means=np.array(ubm.components.means), covars=np.array(ubm.components.covars), weights=np.array(ubm.components.weights), cvtype=1)
     
     train_st = time.time()
     gmm.train(total_features)
@@ -224,8 +224,11 @@ if __name__ == '__main__':
     print "--- Testing Unlabeled Examples ---"
     test_st = time.time()
 
+    count = 0
     # testing the unlabeled test files
     for test_song in negative_song_keys:
+        count+=1
+        print count
         test_feats = songs_without_tag[test_song]['segments_timbre']
 
         all_lklds = gmm.score(test_feats)

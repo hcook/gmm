@@ -219,18 +219,18 @@ class Diarizer(object):
 
         print "DONE writing GMM file"
         
-    def new_gmm(self, M):
+    def new_gmm(self, M, diagBool):
         self.M = M
-        self.gmm = GMM(self.M, self.D)
+        self.gmm = GMM(self.M, self.D, cvtype=diagBool)
 
-    def new_gmm_list(self, M, K):
+    def new_gmm_list(self, M, K, diagBool):
         self.M = M
         self.init_num_clusters = K
-        self.gmm_list = [GMM(self.M, self.D) for i in range(K)]
+        self.gmm_list = [GMM(self.M, self.D, cvtype=diagBool) for i in range(K)]
 
 
 
-    def segment_majority_vote(self, interval_size):
+    def segment_majority_vote(self, interval_size, em_iters):
         
         num_clusters = len(self.gmm_list)
 
@@ -271,7 +271,7 @@ class Diarizer(object):
             for d in data_list[1:]:
                 cluster_data = np.concatenate((cluster_data, d))
 
-            g.train(cluster_data)
+            g.train(cluster_data, max_em_iters=em_iters)
 
             iter_bic_list.append((g,cluster_data))
             iter_bic_dict[p] = cluster_data
@@ -279,7 +279,7 @@ class Diarizer(object):
         return iter_bic_dict, iter_bic_list, most_likely
 
 
-    def cluster(self, KL_ntop, NUM_SEG_LOOPS_INIT, NUM_SEG_LOOPS, seg_length):
+    def cluster(self, em_iters, KL_ntop, NUM_SEG_LOOPS_INIT, NUM_SEG_LOOPS, seg_length):
 
         print " ====================== CLUSTERING ====================== "
         main_start = time.time()
@@ -288,13 +288,13 @@ class Diarizer(object):
         # Get the events, divide them into an initial k clusters and train each GMM on a cluster
         per_cluster = self.N/self.init_num_clusters
         init_training = zip(self.gmm_list,np.vsplit(self.X, range(per_cluster, self.N, per_cluster)))
-
+        
         for g, x in init_training:
-            g.train(x)
+            g.train(x, max_em_iters=em_iters)
 
         # ----------- First majority vote segmentation loop ---------
         for segment_iter in range(0,NUM_SEG_LOOPS_INIT):
-            iter_bic_dict, iter_bic_list, most_likely = self.segment_majority_vote(seg_length)
+            iter_bic_dict, iter_bic_list, most_likely = self.segment_majority_vote(seg_length, em_iters)
 
 
         # ----------- Main Clustering Loop using BIC ------------
@@ -308,7 +308,7 @@ class Diarizer(object):
 
             total_loops+=1
             for segment_iter in range(0,NUM_SEG_LOOPS):
-                iter_bic_dict, iter_bic_list, most_likely = self.segment_majority_vote(seg_length)
+                iter_bic_dict, iter_bic_list, most_likely = self.segment_majority_vote(seg_length, em_iters)
                             
             # Score all pairs of GMMs using BIC
             best_merged_gmm = None
@@ -338,7 +338,7 @@ class Diarizer(object):
                     else:
                         continue
 
-                    new_gmm, score = compute_distance_BIC(g1, g2, data)
+                    new_gmm, score = compute_distance_BIC(g1, g2, data, em_iters)
                     
                     #print "Comparing BIC %d with %d: %f" % (gmm1idx, gmm2idx, score)
                     if score > best_BIC_score: 
@@ -358,7 +358,7 @@ class Diarizer(object):
                         g2, d2 = iter_bic_list[gmm2idx] 
 
                         data = np.concatenate((d1,d2))
-                        new_gmm, score = compute_distance_BIC(g1, g2, data)
+                        new_gmm, score = compute_distance_BIC(g1, g2, data, em_iters)
 
                         #print "Comparing BIC %d with %d: %f" % (gmm1idx, gmm2idx, score)
                         if score > best_BIC_score: 
@@ -386,7 +386,7 @@ class Diarizer(object):
 
             
             print " size of each cluster:", [ g.M for g in self.gmm_list]
-
+            
         print "=== Total clustering time: ", time.time()-main_start
         print "=== Final size of each cluster:", [ g.M for g in self.gmm_list]
 
@@ -492,7 +492,7 @@ def get_config_params(config):
         num_seg_iters = 3
 
     try:
-        num_em_iters = config.get('Diarizer', 'em_iterations')
+        num_em_iters = int(config.get('Diarizer', 'em_iterations'))
     except:
         num_em_iters = 3
 
@@ -548,10 +548,12 @@ if __name__ == '__main__':
 
     # Create tester object
     diarizer = Diarizer(f, sp)
+
     # Create the GMM list
-    diarizer.new_gmm_list(num_comps, num_gmms)
+    diarizer.new_gmm_list(num_comps, num_gmms, 1)
+
     # Cluster
-    most_likely = diarizer.cluster(kl_ntop, num_seg_iters_init, num_seg_iters, seg_length)
+    most_likely = diarizer.cluster(num_em_iters, kl_ntop, num_seg_iters_init, num_seg_iters, seg_length)
 
     # Write out RTTM and GMM parameter files
     diarizer.write_to_RTTM(outfile, sp, meeting_name, most_likely, num_gmms, seg_length)
