@@ -64,7 +64,7 @@ class GMM(object):
     def get_asp_mod(self): return GMM.asp_mod or self.initialize_asp_mod()
 
     #Default parameter space for code variants
-    variant_param_defaults = { 'base': {},
+    variant_param_default = { 'c++': {'dummy': ['1']},
         'cuda': {
             'num_blocks_estep': ['16'],
             'num_threads_estep': ['512'],
@@ -74,8 +74,21 @@ class GMM(object):
             'max_num_components': ['122'],
             'max_num_dimensions_covar_v3': ['41'],
             'max_num_components_covar_v3': ['81'],
-            'covar_version_name': ['V1', 'V2A', 'V2B', 'V3'] },
-        'cilk': {}
+            'covar_version_name': ['V1'] },
+        'cilk': {'dummy': ['1']}
+    }
+    variant_param_autotune = { 'c++': {'dummy': ['1']},
+        'cuda': {
+            'num_blocks_estep': ['16'],
+            'num_threads_estep': ['512'],
+            'num_threads_mstep': ['256'],
+            'num_event_blocks': ['32','128','256'],
+            'max_num_dimensions': ['50'],
+            'max_num_components': ['122'],
+            'max_num_dimensions_covar_v3': ['41'],
+            'max_num_components_covar_v3': ['81'],
+            'covar_version_name': ['V1','V2A','V2B','V3'] },
+        'cilk': {'dummy': ['1']}
     }
 
     def cuda_compilable_limits(param_dict, gpu_info):
@@ -295,15 +308,12 @@ class GMM(object):
         self.components_seeded = True
 
 
-    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype=1, names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
+    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='diag', names_of_backends_to_use=['cuda'], autotune=False, device_id=0): #TODO: Make default backend 'base'
         self.M = M
         self.D = D
-        if cvtype == 1:
-            self.cvtype = 'diag'
-        else:
-            self.cvtype = 'full'
+        self.cvtype = cvtype
 
-        self.variant_param_spaces = variant_param_spaces or GMM.variant_param_defaults
+        self.variant_param_spaces = GMM.variant_param_autotune if autotune else GMM.variant_param_defaults
         self.names_of_backends_to_use = names_of_backends_to_use
         self.components = Components(M, D, weights, means, covars)
         self.eval_data = EvalData(1, M)
