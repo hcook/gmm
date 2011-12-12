@@ -710,7 +710,6 @@ void mstep_covar_launch${'_'+'_'.join(param_val_list)}(float* d_fcs_data_by_dime
 {
   dim3 gridDim2(num_components,num_dimensions*(num_dimensions+1)/2);
   mstep_covariance${'_'+'_'.join(param_val_list)}<<<gridDim2, ${num_threads_mstep}>>>(d_fcs_data_by_dimension,d_components,d_component_memberships,num_dimensions,num_components,num_events);
-
 }
 
 __global__ void
@@ -843,12 +842,10 @@ void mstep_covar_launch${'_'+'_'.join(param_val_list)}(float* d_fcs_data_by_dime
 {
   int num_threads = num_dimensions*(num_dimensions+1)/2;
   mstep_covariance${'_'+'_'.join(param_val_list)}<<<num_components, num_threads>>>(d_fcs_data_by_event,d_components,d_component_memberships,num_dimensions,num_components,num_events);
-
 }
 
 __global__ void
 mstep_covariance_idx${'_'+'_'.join(param_val_list)}(float* fcs_data, int* indices, int num_indices, components_t* components, float* component_memberships, int num_dimensions, int num_components, int num_events) {
-
     int tid = threadIdx.x; // easier variable name for our thread ID
     int row,col,c;
     compute_row_col_thread(num_dimensions, &row, &col);
@@ -858,7 +855,6 @@ mstep_covariance_idx${'_'+'_'.join(param_val_list)}(float* fcs_data, int* indice
     c = blockIdx.x; // Determines what component this block is handling    
 
     int matrix_index = row * num_dimensions + col;
-
     
     // Store the means in shared memory to speed up the covariance computations
     __shared__ float means[${max_num_dimensions}];
@@ -868,18 +864,12 @@ mstep_covariance_idx${'_'+'_'.join(param_val_list)}(float* fcs_data, int* indice
     __syncthreads();
 
     float cov_sum = 0.0f; //my local sum for the matrix element, I (thread) sum up over all N events into this var
-
-    int event;  
-    
     for(int index=0; index < num_indices; index++) {
-
-      event = indices[index];
+      int event = indices[index];
       cov_sum += (fcs_data[event*num_dimensions+row]-means[row])*(fcs_data[event*num_dimensions+col]-means[col])*component_memberships[c*num_events+event];      
     }
 
     __syncthreads();
-
-
 
     if(tid < num_dimensions*(num_dimensions+1)/2) {
         if(components->N[c] >= 1.0f) { // Does it need to be >=1, or just something non-zero?
@@ -1000,7 +990,6 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
 }
  
 void mstep_covar_launch${'_'+'_'.join(param_val_list)}(float* d_fcs_data_by_dimension, float* d_fcs_data_by_event, components_t* d_components, float* d_component_memberships, int num_dimensions, int num_components, int num_events, ${tempbuff_type_name}* temp_buffer_2b)
-
 {
   int num_event_blocks = ${num_event_blocks};
   int event_block_size = num_events%${num_event_blocks} == 0 ? num_events/${num_event_blocks}:num_events/(${num_event_blocks}-1);
@@ -1096,7 +1085,6 @@ void mstep_covar_launch_idx${'_'+'_'.join(param_val_list)}(float* d_fcs_data_by_
 
 %else:
 
-   
 /*
  * Computes the covariance matrices of the data (R matrix)
  * Must be launched with a D*D/2 blocks: 
@@ -1106,10 +1094,7 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
   int tid = threadIdx.x; // easier variable name for our thread ID
   int row,col;
   compute_row_col_block(num_dimensions, &row, &col);
-      
-
   int matrix_index = row * num_dimensions + col;
-        //DIAGONAL
 
   // Store ALL the means in shared memory
   __shared__ float means[${max_num_components_covar_v3}*${max_num_dimensions_covar_v3}];
@@ -1163,7 +1148,6 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
     }
     if(row == col) {
       components->R[c*num_dimensions*num_dimensions+matrix_index] += components->avgvar[c];
-
     }
   } 
 }
@@ -1308,14 +1292,12 @@ mstep_covariance_transpose${'_'+'_'.join(param_val_list)}(float* fcs_data, compo
 void seed_components_launch${'_'+'_'.join(param_val_list)}(float* d_fcs_data_by_event, components_t* d_components, int num_dimensions, int num_components, int num_events)
 {
   seed_components${'_'+'_'.join(param_val_list)}<<< 1, ${num_threads_estep}>>>( d_fcs_data_by_event, d_components, num_dimensions, num_components, num_events);
-
 }
 
 void compute_average_variance_launch${'_'+'_'.join(param_val_list)}(float* d_fcs_data_by_event, components_t* d_components, int num_dimensions, int num_components, int num_events)
 {
   compute_average_variance${'_'+'_'.join(param_val_list)}<<< 1, ${num_threads_estep}>>>( d_fcs_data_by_event, d_components, num_dimensions, num_components, num_events);
   cudaThreadSynchronize();
-
 }
 
 
