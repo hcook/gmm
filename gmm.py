@@ -171,17 +171,17 @@ class GMM(object):
         GMM.asp_mod.add_to_module([Line(cilk_kern_rend)],'cilk')
         c_decl_tpl = AspTemplate.Template(filename="templates/em_cilk_kernel_decl.mako") 
         c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
-        GMM.asp_mod.add_to_preamble(c_decl_rend,'cilk')
+        #GMM.asp_mod.add_to_preamble(c_decl_rend,'cilk')
 
     backend_compilable_limit_funcs = { 
-        'c++': lambda param_dict, device: (True,lambda *args, **kwargs: True),
-        'cilk': lambda param_dict, device: (True,lambda *args, **kwargs: True),
+        'c++':  lambda param_dict, device: True,
+        'cilk': lambda param_dict, device: True,
         'cuda': cuda_compilable_limits
     }
 
     backend_runable_limit_funcs = { 
-        'c++': lambda param_dict, device: (True,lambda *args, **kwargs: True),
-        'cilk': lambda param_dict, device: (True,lambda *args, **kwargs: True),
+        'c++':  lambda param_dict, device: lambda *args, **kwargs: True,
+        'cilk': lambda param_dict, device: lambda *args, **kwargs: True,
         'cuda': cuda_runable_limits
     }
 
@@ -307,8 +307,12 @@ class GMM(object):
         getattr(self.get_asp_mod(),'seed_components_'+self.cvtype)(self.M, D, N)
         self.components_seeded = True
 
+<<<<<<< HEAD
 
     def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='diag', names_of_backends_to_use=['cuda'], autotune=False, device_id=0): #TODO: Make default backend 'base'
+=======
+    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype=1, names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
+>>>>>>> Changes to make Cilk backend work on ASP 0.1.2, requires Cilk V12.0.5
         self.M = M
         self.D = D
         self.cvtype = cvtype
@@ -317,24 +321,26 @@ class GMM(object):
         self.names_of_backends_to_use = names_of_backends_to_use
         self.components = Components(M, D, weights, means, covars)
         self.eval_data = EvalData(1, M)
+        self.platform_info = {}
         self.clf = None # pure python mirror module
         self.use_cuda = False
         self.use_cilk = False
         if 'cuda' in names_of_backends_to_use:
             if 'nvcc' in GMM.platform.get_compilers() and GMM.platform.get_num_cuda_devices() > 0:
                 self.use_cuda = True
+                self.platform_info['cuda'] = GMM.platform.get_cuda_info()
                 if GMM.cuda_device_id == None:
                     GMM.cuda_device_id = device_id
                     GMM.platform.set_cuda_device(device_id)
                 elif GMM.cuda_device_id != device_id:
                     #TODO: May actually be allowable if deallocate all GPU allocations first?
                     print "WARNING: As python only has one thread context, it can only use one GPU at a time, and you are attempting to run on a second GPU."
-                self.cuda_info = GMM.platform.get_cuda_info()
             else: print "WARNING: You asked for a CUDA backend but no compiler was found."
         if 'cilk' in names_of_backends_to_use:
 
             if 'icc' in GMM.platform.get_compilers():
                 self.use_cilk = True
+                self.platform_info['cilk'] = GMM.platform.get_cpu_info()
             else: print "WARNING: You asked for a Cilk backend but no compiler was found."
 
         if means is None and covars is None and weights is None:
@@ -355,7 +361,7 @@ class GMM(object):
             self.insert_rendered_code_into_module('cuda')
             #GMM.asp_mod.backends['c++'].toolchain.cc = 'gcc'
             #GMM.asp_mod.backends['c++'].toolchain.cflags.append('-fPIC')
-            GMM.asp_mod.backends['cuda'].toolchain.cflags.extend(["-Xcompiler","-fPIC","-arch=sm_%s%s" % self.cuda_info['capability'] ])
+            GMM.asp_mod.backends['cuda'].toolchain.cflags.extend(["-Xcompiler","-fPIC","-arch=sm_%s%s" % self.platform_info['cuda']['capability'] ])
             #GMM.asp_mod.backends['cuda'].toolchain.add_library("project",['.','./include'],[],[])  
             GMM.asp_mod.backends['c++'].compilable = False # TODO: For now, must use cuda backend to compile
 
@@ -363,15 +369,16 @@ class GMM(object):
             self.insert_base_code_into_listed_modules(['cilk'])
             self.insert_non_rendered_code_into_cilk_module()
             self.insert_rendered_code_into_module('cilk')
-            #GMM.asp_mod.backends['cilk'].toolchain.cc = 'icc'
-            #GMM.asp_mod.backends['cilk'].toolchain.cflags = ['-O2','-gcc', '-ip','-fPIC']
+            GMM.asp_mod.backends['cilk'].toolchain.cc = 'icc'
+            GMM.asp_mod.backends['cilk'].toolchain.cflags = ['-O2','-gcc', '-ip','-fPIC']
 
         # Setup toolchain and compile
 	from codepy.libraries import add_numpy, add_boost_python, add_cuda
-        for mod in GMM.asp_mod.backends.itervalues():
+        for name, mod in GMM.asp_mod.backends.iteritems():
             add_numpy(mod.toolchain)
             add_boost_python(mod.toolchain)
-            add_cuda(mod.toolchain) #TODO: for now, need to add cuda to c++ toolchain as it might contain host-side cuda funcs
+            if name in ['cuda']:
+                add_cuda(mod.toolchain) #TODO: for now, need to add cuda to c++ toolchain as it might contain host-side cuda funcs
         return GMM.asp_mod
 
     def insert_base_code_into_listed_modules(self, names_of_backends):
@@ -423,7 +430,7 @@ class GMM(object):
         GMM.asp_mod.add_to_preamble(component_t_decl,'cuda')
 
         #TODO: Move this back into insert_base_code_into_listed_modules for cuda 4.1
-        names_of_helper_funcs = ["alloc_events_on_CPU", "alloc_components_on_CPU", "alloc_evals_on_CPU", "dealloc_events_on_CPU", "dealloc_components_on_CPU", "dealloc_temp_components_on_CPU", "dealloc_evals_on_CPU", "get_temp_component_pi", "get_temp_component_means", "get_temp_component_covars", "relink_components_on_CPU", "compute_distance_rissanen", "merge_components" ]
+        names_of_helper_funcs = ["alloc_events_on_CPU", "alloc_components_on_CPU", "alloc_evals_on_CPU", "dealloc_events_on_CPU", "dealloc_components_on_CPU", "dealloc_temp_components_on_CPU", "dealloc_evals_on_CPU", "relink_components_on_CPU", "compute_distance_rissanen", "merge_components", "create_lut_log_table", "compute_KL_distance"]
         for fname in names_of_helper_funcs:
             GMM.asp_mod.add_helper_function(fname, "", 'cuda')
 
@@ -435,8 +442,8 @@ class GMM(object):
         cu_base_rend = cu_base_tpl.render()
         GMM.asp_mod.add_to_module([Line(cu_base_rend)],'cuda')
         #Add Boost interface links for helper functions
-        names_of_helper_funcs = ["alloc_events_on_GPU","alloc_index_list_on_GPU", "alloc_events_from_index_on_GPU", "alloc_components_on_GPU","alloc_evals_on_GPU","copy_event_data_CPU_to_GPU", "copy_index_list_data_CPU_to_GPU", "copy_events_from_index_CPU_to_GPU", "copy_component_data_CPU_to_GPU", "copy_component_data_GPU_to_CPU", "copy_evals_CPU_to_GPU", "copy_evals_data_GPU_to_CPU","dealloc_events_on_GPU","dealloc_components_on_GPU", "dealloc_evals_on_GPU", "dealloc_index_list_on_GPU", "create_lut_log_table", "compute_KL_distance"]
-        for fname in names_of_helper_funcs:
+        names_of_cuda_helper_funcs = ["alloc_events_on_GPU","alloc_index_list_on_GPU", "alloc_events_from_index_on_GPU", "alloc_components_on_GPU","alloc_evals_on_GPU","copy_event_data_CPU_to_GPU", "copy_index_list_data_CPU_to_GPU", "copy_events_from_index_CPU_to_GPU", "copy_component_data_CPU_to_GPU", "copy_component_data_GPU_to_CPU", "copy_evals_CPU_to_GPU", "copy_evals_data_GPU_to_CPU","dealloc_events_on_GPU","dealloc_components_on_GPU", "dealloc_evals_on_GPU", "dealloc_index_list_on_GPU"] 
+        for fname in names_of_cuda_helper_funcs:
             GMM.asp_mod.add_helper_function(fname,"",'cuda')
 
     def insert_non_rendered_code_into_cilk_module(self):
@@ -451,21 +458,20 @@ class GMM(object):
                 float* R;      // Covariance matrix: [M*D*D]
                 float* Rinv;   // Inverse of covariance matrix: [M*D*D]
             } components_t;"""
-        GMM.asp_mod.add_to_preamble(component_t_decl,'cilk')
+        #GMM.asp_mod.add_to_preamble(component_t_decl,'cilk')
 
         #TODO: Move this back into insert_base_code_into_listed_modules for cuda 4.1
-        names_of_helper_funcs = ["alloc_events_on_CPU", "alloc_components_on_CPU", "alloc_evals_on_CPU", "dealloc_events_on_CPU", "dealloc_components_on_CPU", "dealloc_temp_components_on_CPU", "dealloc_evals_on_CPU", "get_temp_component_pi", "get_temp_component_means", "get_temp_component_covars", "relink_components_on_CPU", "compute_distance_rissanen", "merge_components" ]
+        names_of_helper_funcs = ["alloc_events_on_CPU", "alloc_components_on_CPU", "alloc_evals_on_CPU", "dealloc_events_on_CPU", "dealloc_components_on_CPU", "dealloc_temp_components_on_CPU", "dealloc_evals_on_CPU", "relink_components_on_CPU", "compute_distance_rissanen", "merge_components", "create_lut_log_table", "compute_KL_distance"]
         for fname in names_of_helper_funcs:
             GMM.asp_mod.add_helper_function(fname, "", 'cilk')
 
         cilk_base_tpl = AspTemplate.Template(filename="templates/em_cilk_helper_funcs.mako")
         cilk_base_rend = cilk_base_tpl.render()
-        GMM.asp_mod.add_to_module([Line(cilk_base_rend)],'cilk')
+        #GMM.asp_mod.add_to_module([Line(cilk_base_rend)],'cilk')
 
         #Add Cilk source code that is not based on code variant parameters
-        base_system_header_names = [ 'stdlib.h', 'stdio.h', 'string.h', 'math.h', 'time.h']
         system_header_names = ['cilk/cilk.h','cilk/reducer_opadd.h']  
-        for x in base_system_header_names+system_header_names: 
+        for x in system_header_names: 
             GMM.asp_mod.add_to_preamble([Include(x, True)],'cilk')
 
     def render_func_variant( self, param_dict, param_val_list, can_be_compiled, backend_name, func_name):
@@ -493,10 +499,10 @@ class GMM(object):
                 param_names.sort()
                 vals = map(param_dict.get, param_names)
                 # Use vals to render templates 
-                can_be_compiled = compilable(param_dict, self.cuda_info)
+                can_be_compiled = compilable(param_dict, self.platform_info[backend_name])
                 if can_be_compiled:
                     backend_specific_render_func(self, param_dict, vals)
-                run_check = make_run_check(param_dict, self.cuda_info) 
+                run_check = make_run_check(param_dict, self.platform_info[backend_name]) 
                 for func_name in func_names:
                     v_name, v_body = self.render_func_variant(param_dict, vals, can_be_compiled, backend_name, func_name)
                     result.setdefault(func_name,[]).append((v_name,v_body,run_check))
@@ -681,7 +687,7 @@ class GMM(object):
         return ret_list
                             
 
-def compute_distance_BIC(gmm1, gmm2, data, em_iters):
+def compute_distance_BIC(gmm1, gmm2, data, em_iters=10):
     cd1_M = gmm1.M
     cd2_M = gmm2.M
     nComps = cd1_M + cd2_M
@@ -693,7 +699,7 @@ def compute_distance_BIC(gmm1, gmm2, data, em_iters):
     m = np.append(gmm1.components.means, gmm2.components.means)
     c = np.append(gmm1.components.covars, gmm2.components.covars)
 
-    temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c)
+    temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c, cvtype=gmm1.cvtype, names_of_backends_to_use=gmm1.names_of_backends_to_use, variant_param_spaces=gmm1.variant_param_spaces)
 
     temp_GMM.train(data, max_em_iters=em_iters)
     score = temp_GMM.eval_data.likelihood - (gmm1.eval_data.likelihood + gmm2.eval_data.likelihood)

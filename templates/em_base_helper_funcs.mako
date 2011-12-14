@@ -2,6 +2,45 @@
 #define COVARIANCE_DYNAMIC_RANGE 1E6
 #define MINVALUEFORMINUSLOG -1000.0
 
+void print_components(components_t * components, int num_components, int num_dimensions){
+  printf("===============\n");
+  for(int m = 0; m < num_components; m++){
+       printf("%0.8f ", components->N[m]);
+  } printf("\n");
+  for(int m = 0; m < num_components; m++){
+       printf("%0.8f ", components->pi[m]);
+  } printf("\n");
+  for(int m = 0; m < num_components; m++){
+       printf("%0.8f ", components->CP[m]);
+  } printf("\n");
+  for(int m = 0; m < num_components; m++){
+       printf("%0.8f ", components->constant[m]);
+  } printf("\n");
+  for(int m = 0; m < num_components; m++){
+       printf("%0.8f ", components->avgvar[m]);
+  } printf("\n");
+  for(int m = 0; m < num_components; m++){
+    for(int d = 0; d < num_dimensions; d++)
+        printf("%0.8f ", components->means[m*num_dimensions+d]);
+    printf("\n");
+  }
+    for(int m = 0; m < num_components; m++){
+        for(int d = 0; d < num_dimensions; d++)
+            for(int d2 = 0; d2 < num_dimensions; d2++)
+                printf("%0.8f ",
+                components->R[m*num_dimensions*num_dimensions+d*num_dimensions+d2]);
+        printf("\n");
+    }
+
+    for(int m = 0; m < num_components; m++){
+        for(int d = 0; d < num_dimensions; d++)
+            for(int d2 = 0; d2 < num_dimensions; d2++)
+                printf("%0.8f ",
+                components->Rinv[m*num_dimensions*num_dimensions+d*num_dimensions+d2]);
+        printf("\n");
+    }
+  printf("===============\n");
+}
 
 typedef struct return_component_container
 {
@@ -11,6 +50,37 @@ typedef struct return_component_container
 
 ret_c_con_t ret;
 
+void mvtmeans(float* data_by_event, int num_dimensions, int num_events, float* means) {
+    for(int d=0; d < num_dimensions; d++) {
+        means[d] = 0.0;
+        for(int n=0; n < num_events; n++) {
+            means[d] += data_by_event[n*num_dimensions+d];
+        }
+        means[d] /= (float) num_events;
+    }
+}
+
+float log_add(float log_a, float log_b) {
+  if(log_a < log_b) {
+      float tmp = log_a;
+      log_a = log_b;
+      log_b = tmp;
+    }
+  //setting MIN...LOG so small, I don't even need to look
+  return (((log_b - log_a) <= MINVALUEFORMINUSLOG) ? log_a : 
+                log_a + (float)(logf(1.0 + (double)(expf((double)(log_b - log_a))))));
+}
+
+void normalize_pi(components_t* components, int num_components) {
+    float total = 0;
+    for(int i=0; i<num_components; i++) {
+        total += components->pi[i];
+    }
+    
+    for(int m=0; m < num_components; m++){
+        components->pi[m] /= total; 
+    }
+}
 //=== Data structure pointers ===
 
 //CPU copies of events
@@ -555,7 +625,7 @@ void invert_cpu(float* data, int actualsize, float* log_determinant)  {
     }
 
     for(int i=0; i<actualsize; i++) {
-      *log_determinant += log10(fabs(data[i*n+i]));
+      *log_determinant += logf(fabs(data[i*n+i]));
       //printf("log_determinant: %e\n",*log_determinant); 
     }
     //printf("\n\n");

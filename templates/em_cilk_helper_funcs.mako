@@ -2,6 +2,16 @@
 #define COVARIANCE_DYNAMIC_RANGE 1E6
 #define MINVALUEFORMINUSLOG -1000.0f
 
+void mvtmeans(float* data_by_event, int num_dimensions, int num_events, float* means) {
+    for(int d=0; d < num_dimensions; d++) {
+        means[d] = 0.0;
+        for(int n=0; n < num_events; n++) {
+            means[d] += data_by_event[n*num_dimensions+d];
+        }
+        means[d] /= (float) num_events;
+    }
+}
+
 float log_add(float log_a, float log_b) {
   if(log_a < log_b) {
       float tmp = log_a;
