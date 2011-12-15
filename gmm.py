@@ -242,13 +242,14 @@ class GMM(object):
             self.internal_free_event_data()
         self.get_asp_mod().alloc_events_on_CPU(X)
         GMM.event_data_cpu_copy = X
-        if self.use_cuda:
+        if GMM.use_cuda:
             self.get_asp_mod().alloc_events_on_GPU(X.shape[0], X.shape[1])
             self.get_asp_mod().copy_event_data_CPU_to_GPU(X.shape[0], X.shape[1])
             GMM.event_data_gpu_copy = X
 
     def internal_free_event_data(self):
-        if self.event_data_cpu_copy is not None:
+        if GMM is None: return
+        if GMM.event_data_cpu_copy is not None:
             self.get_asp_mod().dealloc_events_on_CPU()
             GMM.event_data_cpu_copy = None
         if GMM.event_data_gpu_copy is not None:
@@ -277,10 +278,11 @@ class GMM(object):
             GMM.index_list_data_cpu_copy = X
                 
     def internal_free_index_list_data(self):
+        if GMM is None: return
         if GMM.index_list_data_gpu_copy is not None:
             self.get_asp_mod().dealloc_index_list_on_GPU()
             GMM.index_list_data_gpu_copy = None
-        if self.index_list_data_cpu_copy is not None:
+        if GMM.index_list_data_cpu_copy is not None:
             self.get_asp_mod().dealloc_index_list_on_CPU()
             GMM.index_list_data_cpu_copy = None
                 
@@ -290,12 +292,13 @@ class GMM(object):
                 self.internal_free_component_data()
             self.get_asp_mod().alloc_components_on_CPU(self.M, self.D, self.components.weights, self.components.means, self.components.covars, self.components.comp_probs)
             GMM.component_data_cpu_copy = self.components
-            if self.use_cuda:
+            if GMM.use_cuda:
                 self.get_asp_mod().alloc_components_on_GPU(self.M, self.D)
                 self.get_asp_mod().copy_component_data_CPU_to_GPU(self.M, self.D)
                 GMM.component_data_gpu_copy = self.components
             
     def internal_free_component_data(self):
+        if GMM is None: return
         if GMM.component_data_cpu_copy is not None:
             self.get_asp_mod().dealloc_components_on_CPU()
             GMM.component_data_cpu_copy = None
@@ -311,7 +314,7 @@ class GMM(object):
                 self.eval_data.resize(X.shape[0], self.M)
                 self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
                 GMM.eval_data_cpu_copy = self.eval_data
-                if self.use_cuda:
+                if GMM.use_cuda:
                     self.get_asp_mod().alloc_evals_on_GPU(X.shape[0], self.M)
                     GMM.eval_data_gpu_copy = self.eval_data
 
@@ -326,6 +329,7 @@ class GMM(object):
             GMM.eval_data_cpu_copy = self.eval_data
 
     def internal_free_eval_data(self):
+        if GMM is None: return
         if GMM.eval_data_cpu_copy is not None:
             self.get_asp_mod().dealloc_evals_on_CPU()
             GMM.eval_data_cpu_copy = None
@@ -585,7 +589,7 @@ class GMM(object):
         self.components.means = self.components.means.reshape(self.M, self.D)
         self.components.covars = self.components.covars.reshape(self.M, self.D, self.D)
         
-        return self
+        return self.eval_data.likelihood
 
         #TODO: expose only one function to the domain programmer
         #handle selection of gather mechanisms internally
