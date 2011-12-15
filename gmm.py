@@ -559,13 +559,11 @@ class GMM(object):
         return self.clf.means, self.clf.covars
     
     def eval_using_python(self, obs_data):
-        from sklearn import mixture
         if self.clf is not None:
             return self.clf.eval(obs_data)
         else: return []
 
     def predict_using_python(self, obs_data):
-        from sklearn import mixture
         if self.clf is not None:
             return self.clf.predict(obs_data)
         else: return []
