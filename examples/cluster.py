@@ -219,14 +219,14 @@ class Diarizer(object):
 
         print "DONE writing GMM file"
         
-    def new_gmm(self, M, diagBool):
+    def new_gmm(self, M, cvtype):
         self.M = M
-        self.gmm = GMM(self.M, self.D, cvtype=diagBool)
+        self.gmm = GMM(self.M, self.D, cvtype=cvtype)
 
-    def new_gmm_list(self, M, K, diagBool):
+    def new_gmm_list(self, M, K, cvtype):
         self.M = M
         self.init_num_clusters = K
-        self.gmm_list = [GMM(self.M, self.D, cvtype=diagBool) for i in range(K)]
+        self.gmm_list = [GMM(self.M, self.D, cvtype=cvtype) for i in range(K)]
 
 
 
@@ -539,7 +539,7 @@ if __name__ == '__main__':
         print "Error! Config file: '", config_file, "' does not exist"
         sys.exit(2)
         
-    # Parse config file
+    # Parse diarizer config file
     config = ConfigParser.ConfigParser()
 
     config.read(config_file)
@@ -550,7 +550,7 @@ if __name__ == '__main__':
     diarizer = Diarizer(f, sp)
 
     # Create the GMM list
-    diarizer.new_gmm_list(num_comps, num_gmms, 1)
+    diarizer.new_gmm_list(num_comps, num_gmms, 'diag')
 
     # Cluster
     most_likely = diarizer.cluster(num_em_iters, kl_ntop, num_seg_iters_init, num_seg_iters, seg_length)

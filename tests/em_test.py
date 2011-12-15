@@ -22,14 +22,12 @@ def generate_synthetic_data(N):
 
 class EMTester(object):
 
-    def __init__(self, from_file, num_subps, device_id, names_of_backends):
+    def __init__(self, from_file, num_subps):
         
         self.results = {}
-        self.device_id = device_id
         self.num_subplots = num_subps
         self.plot_id = num_subps*100 + 11
         self.from_file = from_file
-        self.names_of_backends = names_of_backends
         
         if from_file:
             self.X = np.ndfromtxt('IS1000a.csv', delimiter=',', dtype=np.float32)
@@ -42,7 +40,7 @@ class EMTester(object):
 
     def new_gmm(self, M):
         self.M = M
-        self.gmm = GMM(self.M, self.D, names_of_backends_to_use=self.names_of_backends, autotune=True, device_id=self.device_id)
+        self.gmm = GMM(self.M, self.D, cvtype='diag')
 
     def test_pure_python(self):
         means, covars = self.gmm.train_using_python(self.X)
@@ -57,9 +55,6 @@ class EMTester(object):
             means = self.gmm.components.means.reshape((self.gmm.M, self.gmm.D))
             covars = self.gmm.components.covars.reshape((self.gmm.M, self.gmm.D, self.gmm.D))
             Y = self.gmm.predict(self.X)
-            print means
-            print covars
-            print Y
             if(self.plot_id % 10 <= self.num_subplots):
                 self.results['_'.join(['ASP v',str(self.plot_id-(100*self.num_subplots+11)),'@',str(self.D),str(self.M),str(self.N)])] = (str(self.plot_id), copy.deepcopy(means), copy.deepcopy(covars), copy.deepcopy(Y))
                 self.plot_id += 1
@@ -87,7 +82,7 @@ class EMTester(object):
 if __name__ == '__main__':
     device_id = 0
     num_subplots = 4
-    emt = EMTester(False, num_subplots, device_id, [sys.argv[1]])
+    emt = EMTester(False, num_subplots)
     emt.new_gmm(3)
     emt.test_sejits()
     emt.test_sejits()

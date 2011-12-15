@@ -1,0 +1,4 @@
+GMM:
+  autotune: False
+  name_of_backend_to_use: "cuda"
+  cuda_device_id: 0

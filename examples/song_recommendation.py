@@ -187,7 +187,7 @@ if __name__ == '__main__':
 
     # train UBM on features
     D = total_ubm_features.shape[1]
-    ubm = GMM(M,D,cvtype=1)
+    ubm = GMM(M,D,cvtype='diag')
     
     train_st = time.time()
     ubm.train(training_ubm_features)
@@ -196,7 +196,7 @@ if __name__ == '__main__':
     
     # train positive GMM on features
     D = total_features.shape[1]
-    gmm = GMM(M, D, means=np.array(ubm.components.means), covars=np.array(ubm.components.covars), weights=np.array(ubm.components.weights), cvtype=1)
+    gmm = GMM(M, D, means=np.array(ubm.components.means), covars=np.array(ubm.components.covars), weights=np.array(ubm.components.weights), cvtype='diag')
     
     train_st = time.time()
     gmm.train(total_features)

@@ -23,9 +23,8 @@ def generate_synthetic_data(N):
 class EMTester(object):
 
 
-    def __init__(self, from_file, device_id, num_subps):
+    def __init__(self, from_file, num_subps):
         self.results = {}
-        self.device_id = device_id
         self.num_subplots = num_subps
         self.plot_id = num_subps/2*100 + 21
         if from_file:
@@ -40,14 +39,12 @@ class EMTester(object):
 
     def new_gmm(self, M):
         self.M = M
-
-        self.gmm = GMM(self.M, self.D, device_id=self.device_id)
+        self.gmm = GMM(self.M, self.D)
 
     def new_gmm_list(self, M, k):
         self.M = M
         self.init_num_clusters = k
-
-        self.gmm_list = [GMM(self.M, self.D, device_id=self.device_id) for i in range(k)]
+        self.gmm_list = [GMM(self.M, self.D) for i in range(k)]
 
     def test_speech_ahc(self):
         
@@ -200,7 +197,7 @@ class EMTester(object):
 if __name__ == '__main__':
     device_id = 0
     num_subplots = 6
-    emt = EMTester(True, device_id, num_subplots)
+    emt = EMTester(True, num_subplots)
     #emt.new_gmm(6)
     #t = timeit.Timer(emt.time_cytosis_ahc)
     #print t.timeit(number=1)

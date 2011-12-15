@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.random import *
 from numpy import s_
-from asp.config import PlatformDetector
+from asp.config import PlatformDetector, ConfigReader
 import asp.codegen.templating.template as AspTemplate
 import asp.jit.asp_module as asp_module
 from codepy.cgen import *
@@ -56,9 +56,13 @@ class EvalData(object):
 
 class GMM(object):
     #Module for checking compilers and platform features.
-    #TODO: We track the device id separately here because this specializer only supports using one CUDA device for all GMM instances.
+    #TODO: We track the device id here because this specializer only supports using one CUDA device for all GMM instances.
     platform = PlatformDetector()
-    cuda_device_id = None
+    config = ConfigReader().configs['GMM']
+    cuda_device_id = config['cuda_device_id']
+    autotune = config['autotune']
+    names_of_backends_to_use = [config['name_of_backend_to_use']] #TODO: how to specify multiple backends in config file?
+    cvtype_name_list = ['diag','full'] #Types of covariance matrix
     #Singleton ASP module shared by all instances of GMM
     asp_mod = None    
     def get_asp_mod(self): return GMM.asp_mod or self.initialize_asp_mod()
@@ -157,7 +161,7 @@ class GMM(object):
             return check_func
 
     def cuda_backend_render_func(self, param_dict, vals):
-        param_dict['supports_float32_atomic_add'] = self.cuda_info['supports_float32_atomic_add']
+        param_dict['supports_float32_atomic_add'] = self.platform_info['cuda']['supports_float32_atomic_add']
         cu_kern_tpl = AspTemplate.Template(filename="templates/em_cuda_kernels.mako")
         cu_kern_rend = cu_kern_tpl.render( param_val_list = vals, **param_dict)
         GMM.asp_mod.add_to_module([Line(cu_kern_rend)],'cuda')
@@ -231,7 +235,6 @@ class GMM(object):
         self.get_asp_mod().copy_events_from_index_CPU_to_GPU(I.shape[0], X.shape[1])
         GMM.event_data_gpu_copy = X
         GMM.event_data_cpu_copy = X
-                                                                    
             
     # allocate index list for accessing subset of events
     def internal_alloc_index_list_data(self, X):
@@ -252,7 +255,6 @@ class GMM(object):
             self.get_asp_mod().dealloc_index_list_on_CPU()
             GMM.index_list_data_cpu_copy = None
                 
-            
     def internal_alloc_component_data(self):
         if GMM.component_data_cpu_copy != self.components:
             if GMM.component_data_cpu_copy:
@@ -279,7 +281,6 @@ class GMM(object):
                     self.internal_free_eval_data()
                 self.eval_data.resize(X.shape[0], self.M)
                 self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
-#                self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
                 GMM.eval_data_cpu_copy = self.eval_data
                 if self.use_cuda:
                     self.get_asp_mod().alloc_evals_on_GPU(X.shape[0], self.M)
@@ -304,50 +305,33 @@ class GMM(object):
             GMM.eval_data_gpu_copy = None
 
     def internal_seed_data(self, X, D, N):
-        print self.components.weights                                                                    
-        print self.components.means                                                                      
-        print self.components.covars
-        print self.components.comp_probs
         getattr(self.get_asp_mod(),'seed_components_'+self.cvtype)(self.M, D, N)
         self.components_seeded = True
         self.get_asp_mod().copy_component_data_GPU_to_CPU(self.M, D)
-        print self.components.weights                                                                    
-        print self.components.means                                                                      
-        print self.components.covars
-        print self.components.comp_probs
 
-
-<<<<<<< HEAD
-
-    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='diag', names_of_backends_to_use=['cuda'], autotune=False, device_id=0): #TODO: Make default backend 'base'
-=======
-    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype=1, names_of_backends_to_use=['cuda'], variant_param_spaces=None, device_id=0): #TODO: Make default backend 'base'
->>>>>>> Changes to make Cilk backend work on ASP 0.1.2, requires Cilk V12.0.5
+    def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='diag'): 
         self.M = M
         self.D = D
-        self.cvtype = cvtype
+        if cvtype in GMM.cvtype_name_list:
+            self.cvtype = cvtype 
+        else:
+            raise RuntimeError("Specified cvtype is not allowed, try one of " + str(GMM.cvtype_name_list))
 
-        self.variant_param_spaces = GMM.variant_param_autotune if autotune else GMM.variant_param_defaults
-        self.names_of_backends_to_use = names_of_backends_to_use
+        self.variant_param_spaces = GMM.variant_param_autotune if GMM.autotune else GMM.variant_param_default
+        self.names_of_backends_to_use = GMM.names_of_backends_to_use
         self.components = Components(M, D, weights, means, covars)
         self.eval_data = EvalData(1, M)
         self.platform_info = {}
         self.clf = None # pure python mirror module
         self.use_cuda = False
         self.use_cilk = False
-        if 'cuda' in names_of_backends_to_use:
+        if 'cuda' in self.names_of_backends_to_use:
             if 'nvcc' in GMM.platform.get_compilers() and GMM.platform.get_num_cuda_devices() > 0:
                 self.use_cuda = True
+                GMM.platform.set_cuda_device(GMM.cuda_device_id)
                 self.platform_info['cuda'] = GMM.platform.get_cuda_info()
-                if GMM.cuda_device_id == None:
-                    GMM.cuda_device_id = device_id
-                    GMM.platform.set_cuda_device(device_id)
-                elif GMM.cuda_device_id != device_id:
-                    #TODO: May actually be allowable if deallocate all GPU allocations first?
-                    print "WARNING: As python only has one thread context, it can only use one GPU at a time, and you are attempting to run on a second GPU."
             else: print "WARNING: You asked for a CUDA backend but no compiler was found."
-        if 'cilk' in names_of_backends_to_use:
-
+        if 'cilk' in self.names_of_backends_to_use:
             if 'icc' in GMM.platform.get_compilers():
                 self.use_cilk = True
                 self.platform_info['cilk'] = GMM.platform.get_cpu_info()
@@ -504,7 +488,7 @@ class GMM(object):
             if idx == len(key_arr)-1:
                 # Get vals based on alphabetical order of keys
                 param_dict = current.copy()
-                param_dict['diag_only'] = '1' if cvtype == 'diag' else '0'
+                param_dict['cvtype'] = cvtype
                 param_names = param_dict.keys()
                 param_names.sort()
                 vals = map(param_dict.get, param_names)
@@ -523,7 +507,7 @@ class GMM(object):
     def insert_rendered_code_into_module(self, backend_name):
         import hashlib
         key_func = lambda *args, **kwargs: hashlib.md5(str([args[0],args[1],math.floor(math.log10(args[2]))])+str(kwargs)).hexdigest()
-        for cvtype in ['diag', 'full']:
+        for cvtype in GMM.cvtype_name_list:
             func_names = ['train', 'eval', 'seed_components']
             all_variants = {}
             self.generate_permutations( self.variant_param_spaces[backend_name].keys(),
@@ -709,7 +693,7 @@ def compute_distance_BIC(gmm1, gmm2, data, em_iters=10):
     m = np.append(gmm1.components.means, gmm2.components.means)
     c = np.append(gmm1.components.covars, gmm2.components.covars)
 
-    temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c, cvtype=gmm1.cvtype, names_of_backends_to_use=gmm1.names_of_backends_to_use, variant_param_spaces=gmm1.variant_param_spaces)
+    temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c, cvtype=gmm1.cvtype)
 
     temp_GMM.train(data, max_em_iters=em_iters)
     score = temp_GMM.eval_data.likelihood - (gmm1.eval_data.likelihood + gmm2.eval_data.likelihood)
