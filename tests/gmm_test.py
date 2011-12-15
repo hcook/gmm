@@ -1,7 +1,7 @@
 import unittest2 as unittest
 import copy
 import numpy as np
-from gmm import GMM, compute_distance_BIC
+from gmm_specializer.gmm import GMM, compute_distance_BIC
 
 class BasicTests(unittest.TestCase):
     def test_init(self):
