@@ -27,7 +27,6 @@ class EMTester(object):
         self.results = {}
         self.device_id = device_id
         self.num_subplots = num_subps
-        self.names_of_backends = names_of_backends
         self.plot_id = num_subps/2*100 + 21
         if from_file:
             self.X = np.ndfromtxt('IS1000a.csv', delimiter=',', dtype=np.float32)

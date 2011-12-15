@@ -23,8 +23,12 @@ boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
 %endif
 
   // Computes the R matrix inverses, and the gaussian constant
+  copy_component_data_GPU_to_CPU(num_components, num_dimensions);
+  print_components(&components,num_components, num_dimensions);
   constants_kernel_launch${'_'+'_'.join(param_val_list)}(d_components,num_components,num_dimensions);
   cudaThreadSynchronize();
+  copy_component_data_GPU_to_CPU(num_components, num_dimensions);
+  print_components(&components,num_components, num_dimensions);
   CUT_CHECK_ERROR("Constants Kernel execution failed: ");
 
   // Compute average variance based on the data
@@ -88,8 +92,12 @@ boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
     CUT_CHECK_ERROR("M-step Kernel execution failed: ");
 
     // Inverts the R matrices, computes the constant, normalizes component probabilities
+  copy_component_data_GPU_to_CPU(num_components, num_dimensions);
+  print_components(&components,num_components, num_dimensions);
     constants_kernel_launch${'_'+'_'.join(param_val_list)}(d_components,num_components,num_dimensions);
     cudaThreadSynchronize();
+  copy_component_data_GPU_to_CPU(num_components, num_dimensions);
+  print_components(&components,num_components, num_dimensions);
     CUT_CHECK_ERROR("Constants Kernel execution failed: ");
 
     // change = (likelihood - old_likelihood)/fabs(old_likelihood);

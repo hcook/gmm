@@ -22,10 +22,9 @@ def generate_synthetic_data(N):
 
 class EMTester(object):
 
-    def __init__(self, from_file, variant_param_spaces, num_subps, device_id, names_of_backends):
+    def __init__(self, from_file, num_subps, device_id, names_of_backends):
         
         self.results = {}
-        self.variant_param_spaces = variant_param_spaces
         self.device_id = device_id
         self.num_subplots = num_subps
         self.plot_id = num_subps*100 + 11
@@ -43,7 +42,7 @@ class EMTester(object):
 
     def new_gmm(self, M):
         self.M = M
-        self.gmm = GMM(self.M, self.D, names_of_backends_to_use=self.names_of_backends, variant_param_spaces=self.variant_param_spaces, device_id=self.device_id)
+        self.gmm = GMM(self.M, self.D, names_of_backends_to_use=self.names_of_backends, autotune=True, device_id=self.device_id)
 
     def test_pure_python(self):
         means, covars = self.gmm.train_using_python(self.X)
@@ -58,6 +57,9 @@ class EMTester(object):
             means = self.gmm.components.means.reshape((self.gmm.M, self.gmm.D))
             covars = self.gmm.components.covars.reshape((self.gmm.M, self.gmm.D, self.gmm.D))
             Y = self.gmm.predict(self.X)
+            print means
+            print covars
+            print Y
             if(self.plot_id % 10 <= self.num_subplots):
                 self.results['_'.join(['ASP v',str(self.plot_id-(100*self.num_subplots+11)),'@',str(self.D),str(self.M),str(self.N)])] = (str(self.plot_id), copy.deepcopy(means), copy.deepcopy(covars), copy.deepcopy(Y))
                 self.plot_id += 1
@@ -85,19 +87,7 @@ class EMTester(object):
 if __name__ == '__main__':
     device_id = 0
     num_subplots = 4
-    variant_param_spaces = {'base': {},
-                            'cuda': {'num_blocks_estep': ['16'],
-                                     'num_threads_estep': ['512'],
-                                     'num_threads_mstep': ['512'],
-                                     'num_event_blocks': ['128'],
-                                     'max_num_dimensions': ['50'],
-                                     'max_num_components': ['122'],
-                                     'max_num_dimensions_covar_v3': ['40'],
-                                     'max_num_components_covar_v3': ['82'],
-                                     'covar_version_name': ['V1', 'V2A', 'V2B', 'V3'] },
-                            'cilk': {}
-                            }
-    emt = EMTester(False, variant_param_spaces, num_subplots, device_id, [sys.argv[1]])
+    emt = EMTester(False, num_subplots, device_id, [sys.argv[1]])
     emt.new_gmm(3)
     emt.test_sejits()
     emt.test_sejits()

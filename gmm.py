@@ -304,8 +304,18 @@ class GMM(object):
             GMM.eval_data_gpu_copy = None
 
     def internal_seed_data(self, X, D, N):
+        print self.components.weights                                                                    
+        print self.components.means                                                                      
+        print self.components.covars
+        print self.components.comp_probs
         getattr(self.get_asp_mod(),'seed_components_'+self.cvtype)(self.M, D, N)
         self.components_seeded = True
+        self.get_asp_mod().copy_component_data_GPU_to_CPU(self.M, D)
+        print self.components.weights                                                                    
+        print self.components.means                                                                      
+        print self.components.covars
+        print self.components.comp_probs
+
 
 <<<<<<< HEAD
 
