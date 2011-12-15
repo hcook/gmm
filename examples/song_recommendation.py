@@ -17,7 +17,7 @@ import random as rnd
 import cPickle as pickle
 import operator
 
-from gmm import *
+from gmm.gmm_specializer import *
 
 def get_song_dict():
     fileList = []

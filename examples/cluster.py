@@ -14,7 +14,7 @@ import os.path
 import getopt
 import h5py
 
-from gmm import *
+from gmm_specializer.gmm import *
 
 
 MINVALUEFORMINUSLOG = -1000.0

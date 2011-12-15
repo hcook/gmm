@@ -5,7 +5,7 @@ import pylab as pl
 import itertools
 import copy
 
-from gmm import *
+from gmm_specializer.gmm import *
 
 def generate_synthetic_data(N):
     np.random.seed(0)
