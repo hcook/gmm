@@ -66,10 +66,10 @@ class GMM(object):
     #Checking specializer configuration, compiler availability and platform features.
     #TODO: We track this stuff in singleton variables because this specializer only supports using one backend device for all GMM instances running from the same config file.
     platform = PlatformDetector()
-    config = ConfigReader().configs['GMM']
-    cuda_device_id = config['cuda_device_id']
-    autotune = config['autotune']
-    names_of_backends_to_use = [config['name_of_backend_to_use']] #TODO: how to specify multiple backends in config file?
+    config = ConfigReader('GMM')
+    cuda_device_id = config.get_option('cuda_device_id')
+    autotune = config.get_option('autotune')
+    names_of_backends_to_use = [config.get_option('name_of_backend_to_use')] #TODO: how to specify multiple backends in config file?
     use_cuda = False
     use_cilk = False
     platform_info = {}
