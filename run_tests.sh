@@ -14,4 +14,4 @@ then
     PYTHONARGS=
 fi
 
-PYTHONPATH=`pwd`:${PYTHONPATH} ${PYTHON} ${PYTHONARGS} tests/arraydoubler_test.py
+PYTHONPATH=`pwd`:${PYTHONPATH} ${PYTHON} ${PYTHONARGS} tests/gmm_test.py

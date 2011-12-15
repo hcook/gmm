@@ -708,9 +708,9 @@ def compute_distance_BIC(gmm1, gmm2, data, em_iters=10):
     ratio1 = float(cd1_M)/float(nComps)
     ratio2 = float(cd2_M)/float(nComps)
 
-    w = np.append(ratio1*gmm1.components.weights, ratio2*gmm2.components.weights)
-    m = np.append(gmm1.components.means, gmm2.components.means)
-    c = np.append(gmm1.components.covars, gmm2.components.covars)
+    w = np.ascontiguousarray(np.append(ratio1*gmm1.components.weights, ratio2*gmm2.components.weights))
+    m = np.ascontiguousarray(np.append(gmm1.components.means, gmm2.components.means))
+    c = np.ascontiguousarray(np.append(gmm1.components.covars, gmm2.components.covars))
 
     temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c, cvtype=gmm1.cvtype)
 
@@ -726,10 +726,10 @@ def compute_distance_BIC_idx(gmm1, gmm2, data, index_list):
     ratio1 = float(cd1_M)/float(nComps)
     ratio2 = float(cd2_M)/float(nComps)
     
-    w = np.append(ratio1*gmm1.components.weights, ratio2*gmm2.components.weights)
-    m = np.append(gmm1.components.means, gmm2.components.means)
-    c = np.append(gmm1.components.covars, gmm2.components.covars)
-    temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c, names_of_backends_to_use=gmm1.names_of_backends_to_use, variant_param_spaces=gmm1.variant_param_spaces, device_id=gmm1.device_id)
+    w = np.ascontiguousarray(np.append(ratio1*gmm1.components.weights, ratio2*gmm2.components.weights))
+    m = np.ascontiguousarray(np.append(gmm1.components.means, gmm2.components.means))
+    c = np.ascontiguousarray(np.append(gmm1.components.covars, gmm2.components.covars))
+    temp_GMM = GMM(nComps, gmm1.D, weights=w, means=m, covars=c, cvtype=gmm1.cvtype)
     
     temp_GMM.train_on_subset_c(data, index_list)
     
