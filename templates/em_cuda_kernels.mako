@@ -12,7 +12,7 @@ __device__ void invert${'_'+'_'.join(param_val_list)}(float* data, int actualsiz
   int num_dimensions = actualsize;
   int row, col;
 
-#if ${diag_only}
+%if cvtype == 'diag':
   if(threadIdx.x == 0) {
     *log_determinant = 0.0f;
     for(int d = 0; d < num_dimensions*num_dimensions; d++) {
@@ -25,7 +25,7 @@ __device__ void invert${'_'+'_'.join(param_val_list)}(float* data, int actualsiz
     }
   }
 
-#else
+%else:
    
   if(threadIdx.x == 0) {
     *log_determinant = 0.0f;
@@ -86,8 +86,7 @@ __device__ void invert${'_'+'_'.join(param_val_list)}(float* data, int actualsiz
     }
 
   }
-
-  #endif
+%endif
 }
 
 
@@ -380,42 +379,30 @@ estep1${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* components,
 
     
     for(int event=start_index; event<end_index; event += ${num_threads_estep}) {
-      like = 0.0f;
-        // this does the loglikelihood calculation
-        #if ${diag_only}
+        like = 0.0f;
+%if cvtype == 'diag':
+        for(int j=0; j<num_dimensions; j++) {
+            like += (fcs_data[j*num_events+event]-means[j]) * (fcs_data[j*num_events+event]-means[j]) * Rinv[j*num_dimensions+j];
+        }
+%else:
+        for(int i=0; i<num_dimensions; i++) {
             for(int j=0; j<num_dimensions; j++) {
-              like += (fcs_data[j*num_events+event]-means[j]) * (fcs_data[j*num_events+event]-means[j]) * Rinv[j*num_dimensions+j];
+                like += (fcs_data[i*num_events+event]-means[i]) * (fcs_data[j*num_events+event]-means[j]) * Rinv[i*num_dimensions+j];
             }
-        #else
-            for(int i=0; i<num_dimensions; i++) {
-                for(int j=i+1; j<num_dimensions; j++) {
-                  like += (fcs_data[i*num_events+event]-means[i]) * (fcs_data[j*num_events+event]-means[j]) * Rinv[i*num_dimensions+j];
-      
-                }
-    
-            }
-#endif
-            if(component_pi > 0.0f) {
-              component_memberships[c*num_events+event] = -0.5 *like  + constant + logf(component_pi); // numerator of the probability computation
-            } else {
-              component_memberships[c*num_events+event] = MINVALUEFORMINUSLOG; // numerator of the probability computation
-            }
+        }
+%endif
+        component_memberships[c*num_events+event] = (component_pi > 0.0f) ? -0.5*like + constant + logf(component_pi) : MINVALUEFORMINUSLOG;
     }
-
 }
 
 __global__ void
 estep1_log_add${'_'+'_'.join(param_val_list)}(int num_events, int num_components, float* loglikelihoods, float *component_memberships) {
-
     int tid = threadIdx.x;
-    
     for(int event=tid; event<num_events; event += ${num_threads_estep}) {
-
       float log_lkld = MINVALUEFORMINUSLOG;
       for(int c = 0; c<num_components; c++) {
         log_lkld = log_add(log_lkld, component_memberships[c*num_events+event]);
       }
-
       loglikelihoods[event] = log_lkld;
     }
 }
@@ -490,8 +477,6 @@ estep2${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* components,
     }
 }
 
-
-
 __global__ void
 mstep_means${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* components, float* component_memberships, int num_dimensions, int num_components, int num_events) {
     // One block per component, per dimension:  (M x D) grid of blocks
@@ -499,7 +484,6 @@ mstep_means${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* compon
     int num_threads = blockDim.x;
     int c = blockIdx.x; // component number
     int d = blockIdx.y; // dimension number
-
     
     __shared__ float temp_sum[${num_threads_mstep}];
     float sum = 0.0f;
@@ -659,15 +643,14 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
 
     int matrix_index = row * num_dimensions + col;
 
-#if ${diag_only}
+%if cvtype == 'diag':
     if(row!=col) {
       components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
       matrix_index = col*num_dimensions+row;
       components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
       return;
-      
     }
-#endif
+%endif
 
     // Store the means of this component in shared memory
     __shared__ float means[${max_num_dimensions}];
@@ -796,14 +779,14 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
     float cov_sum = 0.0f; //my local sum for the matrix element, I (thread) sum up over all N events into this var
 
     if(tid < num_dimensions*(num_dimensions+1)/2) {
-#if ${diag_only}
+%if cvtype == 'diag':
       if(row!=col) {
         components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
         matrix_index = col*num_dimensions+row;
         components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
         return;      
       }
-#endif
+%endif
 
         for(int event=0; event < num_events; event++) {
           cov_sum += (fcs_data[event*num_dimensions+row]-means[row])*(fcs_data[event*num_dimensions+col]-means[col])*component_memberships[c*num_events+event];
@@ -827,8 +810,6 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
           components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f; // what should the variance be for an empty component...?
         }
         
-        // Regularize matrix - adds some variance to the diagonal elements
-        // Helps keep covariance matrix non-singular (so it can be inverted)
         // The amount added is scaled down based on COVARIANCE_DYNAMIC_RANGE constant defined at top of this file
         if(row == col) {
           components->R[c*num_dimensions*num_dimensions+matrix_index] += components->avgvar[c];
@@ -885,8 +866,6 @@ mstep_covariance_idx${'_'+'_'.join(param_val_list)}(float* fcs_data, int* indice
           components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f; // what should the variance be for an empty component...?
         }
         
-        // Regularize matrix - adds some variance to the diagonal elements
-        // Helps keep covariance matrix non-singular (so it can be inverted)
         // The amount added is scaled down based on COVARIANCE_DYNAMIC_RANGE constant defined at top of this file
         if(row == col) {
           components->R[c*num_dimensions*num_dimensions+matrix_index] += components->avgvar[c];
@@ -936,14 +915,14 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
 
     if(tid < num_dimensions*(num_dimensions+1)/2) {
 
-#if ${diag_only}
+%if cvtype == 'diag':
       if(row!=col) {
         components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
         matrix_index = col*num_dimensions+row;
         components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
         return;      
       }
-#endif
+%endif
         for(int event=e_start; event < e_end; event++) {
           cov_sum += (fcs_data[event*num_dimensions+row]-means[row])*(fcs_data[event*num_dimensions+col]-means[col])*component_memberships[c*num_events+event];
         }
@@ -980,8 +959,6 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
         components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f; // what should the variance be for an empty component...?
       }
     
-      // Regularize matrix - adds some variance to the diagonal elements
-      // Helps keep covariance matrix non-singular (so it can be inverted)
       // The amount added is scaled down based on COVARIANCE_DYNAMIC_RANGE constant defined at top of this file
       if(row == col) {
         components->R[c*num_dimensions*num_dimensions+matrix_index] += components->avgvar[c];
@@ -1065,8 +1042,6 @@ mstep_covariance_idx${'_'+'_'.join(param_val_list)}(float* fcs_data, int* indice
         components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f; // what should the variance be for an empty component...?
       }
     
-      // Regularize matrix - adds some variance to the diagonal elements
-      // Helps keep covariance matrix non-singular (so it can be inverted)
       // The amount added is scaled down based on COVARIANCE_DYNAMIC_RANGE constant defined at top of this file
       if(row == col) {
         components->R[c*num_dimensions*num_dimensions+matrix_index] += components->avgvar[c];
@@ -1108,14 +1083,14 @@ mstep_covariance${'_'+'_'.join(param_val_list)}(float* fcs_data, components_t* c
   
   for(int c = 0; c<num_components; c++) {
 
-#if ${diag_only}
+%if cvtype == 'diag':
     if(row!=col) {
       components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
       matrix_index = col*num_dimensions+row;
       components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
       return;
     }
-#endif    
+%endif    
 
     float cov_sum = 0.0f;
     for(int event=tid; event < num_events; event+=${num_threads_mstep}) {
@@ -1240,14 +1215,14 @@ mstep_covariance_transpose${'_'+'_'.join(param_val_list)}(float* fcs_data, compo
 
     int matrix_index = row * num_dimensions + col;
 
-    #if ${diag_only}
+%if cvtype == 'diag':
     if(row != col) {
         components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
         matrix_index = col*num_dimensions+row;
         components->R[c*num_dimensions*num_dimensions+matrix_index] = 0.0f;
         return;
     }
-    #endif 
+%endif 
 
     // Store the means in shared memory to speed up the covariance computations
     __shared__ float means[${max_num_dimensions}];

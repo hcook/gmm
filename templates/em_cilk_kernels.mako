@@ -117,17 +117,17 @@ void estep1${'_'+'_'.join(param_val_list)}(float* data, components_t* components
         float* Rinv = &(components->Rinv[m*D*D]);
         for(int n=0; n < N; n++) {
             float like = 0.0;
-            #if ${diag_only}
+%if cvtype == 'diag':
             for(int i=0; i < D; i++) {
                 like += (data[i*N+n]-means[i])*(data[i*N+n]-means[i])*Rinv[i*D+i];
             }
-            #else
+%else:
             for(int i=0; i < D; i++) {
-                for(int j=i+1; j < D; j++) {
+                for(int j=0; j < D; j++) {
                     like += (data[i*N+n]-means[i])*(data[j*N+n]-means[j])*Rinv[i*D+j];
                 }
             }
-            #endif  
+%endif
             component_memberships[m*N+n] = (component_pi > 0.0f) ? -0.5*like + component_constant + logf(component_pi) : MINVALUEFORMINUSLOG;
         }
     }
@@ -231,13 +231,13 @@ void mstep_covar${'_'+'_'.join(param_val_list)}(float* data, components_t* compo
         cilk::reducer_opadd<float> cov_sum(0.0f);
         for(int i=0; i < D; i++) {
             for(int j=0; j <= i; j++) {
-                #if ${diag_only}
+%if cvtype == 'diag':
                 if(i != j) {
                     components->R[m*D*D+i*D+j] = 0.0f;
                     components->R[m*D*D+j*D+i] = 0.0f;
                     continue;
                 }
-                #endif
+%endif
                 float sum = 0.0;
                 for(int n=0; n < N; n++) {
                     sum += (data[i*N+n]-means[i])*(data[j*N+n]-means[j])*component_memberships[m*N+n];
@@ -264,13 +264,13 @@ void mstep_covar_idx${'_'+'_'.join(param_val_list)}(float* data_by_dimension, fl
         cilk::reducer_opadd<float> cov_sum(0.0f);
         for(int i=0; i < D; i++) {
             for(int j=0; j <= i; j++) {
-                #if ${diag_only}
+%if cvtype == 'diag':
                 if(i != j) {
                     components->R[m*D*D+i*D+j] = 0.0f;
                     components->R[m*D*D+j*D+i] = 0.0f;
                     continue;
                 }
-                #endif
+%endif
                 float sum = 0.0;
                 for(int index=0; index < num_indices; index++) {
                     int n = indices[index];

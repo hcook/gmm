@@ -2,6 +2,17 @@
 #define COVARIANCE_DYNAMIC_RANGE 1E6
 #define MINVALUEFORMINUSLOG -1000.0
 
+void print_evals(float* component_memberships, float* loglikelihoods, int num_events, int num_components){
+  for(int m = 0; m < num_components; m++){
+    for(int e = 0; e < num_events; e++)
+        printf("%0.8f ", component_memberships[m*num_events+e]);
+    printf("\n");
+  }
+  for(int e = 0; e < num_events; e++)
+    printf("%0.8f ", loglikelihoods[e]);
+  printf("\n");
+}
+
 void print_components(components_t * components, int num_components, int num_dimensions){
   printf("===============\n");
   for(int m = 0; m < num_components; m++){

@@ -23,13 +23,13 @@ boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
 %endif
 
   // Computes the R matrix inverses, and the gaussian constant
-  copy_component_data_GPU_to_CPU(num_components, num_dimensions);
-  print_components(&components,num_components, num_dimensions);
   constants_kernel_launch${'_'+'_'.join(param_val_list)}(d_components,num_components,num_dimensions);
   cudaThreadSynchronize();
-  copy_component_data_GPU_to_CPU(num_components, num_dimensions);
-  print_components(&components,num_components, num_dimensions);
   CUT_CHECK_ERROR("Constants Kernel execution failed: ");
+  //copy_component_data_GPU_to_CPU(num_components, num_dimensions);
+  //print_components(&components, num_components, num_dimensions);
+  //copy_evals_data_GPU_to_CPU(num_events, num_components);
+  //print_evals(component_memberships, loglikelihoods, num_events, num_components);
 
   // Compute average variance based on the data
   compute_average_variance_launch${'_'+'_'.join(param_val_list)}(d_fcs_data_by_event, d_components, num_dimensions, num_components, num_events);
@@ -65,6 +65,8 @@ boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
     estep2_launch${'_'+'_'.join(param_val_list)}(d_fcs_data_by_dimension,d_components, d_component_memberships, num_dimensions,num_components,num_events,d_likelihoods);
     cudaThreadSynchronize();
     CUT_CHECK_ERROR("E-step Kernel execution failed");
+    //copy_evals_data_GPU_to_CPU(num_events, num_components);
+    //print_evals(component_memberships, loglikelihoods, num_events, num_components);
 
     // Copy the likelihood totals from each block, sum them up to get a total
     CUDA_SAFE_CALL(cudaMemcpy(likelihoods,d_likelihoods,sizeof(float)*${num_blocks_estep},cudaMemcpyDeviceToHost));
@@ -92,12 +94,8 @@ boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
     CUT_CHECK_ERROR("M-step Kernel execution failed: ");
 
     // Inverts the R matrices, computes the constant, normalizes component probabilities
-  copy_component_data_GPU_to_CPU(num_components, num_dimensions);
-  print_components(&components,num_components, num_dimensions);
     constants_kernel_launch${'_'+'_'.join(param_val_list)}(d_components,num_components,num_dimensions);
     cudaThreadSynchronize();
-  copy_component_data_GPU_to_CPU(num_components, num_dimensions);
-  print_components(&components,num_components, num_dimensions);
     CUT_CHECK_ERROR("Constants Kernel execution failed: ");
 
     // change = (likelihood - old_likelihood)/fabs(old_likelihood);
@@ -105,6 +103,8 @@ boost::python::tuple em_cuda_train${'_'+'_'.join(param_val_list)} (
 
     iters++;
     
+    //copy_component_data_GPU_to_CPU(num_components, num_dimensions);
+    //print_components(&components, num_components, num_dimensions);
   }//EM Loop
 
     
