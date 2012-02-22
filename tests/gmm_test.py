@@ -40,9 +40,9 @@ class SyntheticDataTests(unittest.TestCase):
         means1  = gmm1.components.means.flatten()
         covars1 = gmm1.components.covars.flatten()
 
-        self.assertAlmostEqual(likelihood0, likelihood1)
-        for a,b in zip(means0, means1):   self.assertAlmostEqual(a,b)
-        for a,b in zip(covars0, covars1): self.assertAlmostEqual(a,b)
+        self.assertAlmostEqual(likelihood0, likelihood1, delta=1)
+        for a,b in zip(means0, means1):   self.assertAlmostEqual(a,b,places=2)
+        for a,b in zip(covars0, covars1): self.assertAlmostEqual(a,b,places=2)
 
     def test_prediction_once(self):
         gmm0 = GMM(self.M, self.D, cvtype='diag')
@@ -75,9 +75,9 @@ class SyntheticDataTests(unittest.TestCase):
         means1  = gmm1.components.means.flatten()
         covars1 = gmm1.components.covars.flatten()
 
-        self.assertAlmostEqual(likelihood0, likelihood1)
-        for a,b in zip(means0, means1):   self.assertAlmostEqual(a,b)
-        for a,b in zip(covars0, covars1): self.assertAlmostEqual(a,b)
+        self.assertAlmostEqual(likelihood0, likelihood1, delta=1)
+        for a,b in zip(means0, means1):   self.assertAlmostEqual(a,b,places=2)
+        for a,b in zip(covars0, covars1): self.assertAlmostEqual(a,b,places=2)
 
     def test_prediction_full(self):
         gmm0 = GMM(self.M, self.D, cvtype='full')
@@ -182,9 +182,9 @@ class SpeechDataTests(unittest.TestCase):
         means1  = gmm1.components.means.flatten()
         covars1 = gmm1.components.covars.flatten()
 
-        self.assertAlmostEqual(likelihood0, likelihood1)
-        for a,b in zip(means0, means1):   self.assertAlmostEqual(a,b)
-        for a,b in zip(covars0, covars1): self.assertAlmostEqual(a,b)
+        self.assertAlmostEqual(likelihood0, likelihood1, delta=1)
+        for a,b in zip(means0, means1):   self.assertAlmostEqual(a,b,places=2)
+        for a,b in zip(covars0, covars1): self.assertAlmostEqual(a,b,places=2)
 
     def test_prediction_once(self):
         gmm0 = GMM(self.M, self.D, cvtype='diag')
