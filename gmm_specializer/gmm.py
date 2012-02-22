@@ -258,24 +258,26 @@ class GMM(object):
 
     def internal_alloc_event_data_from_index(self, X, I):
         #if not np.array_equal(GMM.event_data_gpu_copy, X) and X is not None:
-        if GMM.event_data_gpu_copy is not None:
+        if GMM.event_data_cpu_copy is not None:
             self.internal_free_event_data()
         self.get_asp_mod().alloc_events_from_index_on_CPU(X, I, I.shape[0], X.shape[1])
-        self.get_asp_mod().alloc_events_from_index_on_GPU(I.shape[0], X.shape[1])
-        self.get_asp_mod().copy_events_from_index_CPU_to_GPU(I.shape[0], X.shape[1])
-        GMM.event_data_gpu_copy = X
         GMM.event_data_cpu_copy = X
+        if GMM.use_cuda:
+            self.get_asp_mod().alloc_events_from_index_on_GPU(I.shape[0], X.shape[1])
+            self.get_asp_mod().copy_events_from_index_CPU_to_GPU(I.shape[0], X.shape[1])
+            GMM.event_data_gpu_copy = X
             
     def internal_alloc_index_list_data(self, X):
         # allocate index list for accessing subset of events
-        if not np.array_equal(GMM.index_list_data_gpu_copy, X) and X is not None:
-            if GMM.index_list_data_gpu_copy is not None:
+        if not np.array_equal(GMM.index_list_data_cpu_copy, X) and X is not None:
+            if GMM.index_list_data_cpu_copy is not None:
                 self.internal_free_index_list_data()
             self.get_asp_mod().alloc_index_list_on_CPU(X)
-            self.get_asp_mod().alloc_index_list_on_GPU(X.shape[0])
-            self.get_asp_mod().copy_index_list_data_CPU_to_GPU(X.shape[0])
-            GMM.index_list_data_gpu_copy = X
             GMM.index_list_data_cpu_copy = X
+            if GMM.use_cuda:
+                self.get_asp_mod().alloc_index_list_on_GPU(X.shape[0])
+                self.get_asp_mod().copy_index_list_data_CPU_to_GPU(X.shape[0])
+                GMM.index_list_data_gpu_copy = X
                 
     def internal_free_index_list_data(self):
         if GMM is None: return
@@ -323,10 +325,11 @@ class GMM(object):
             if GMM.eval_data_gpu_copy is not None:
                 self.internal_free_eval_data()
             self.eval_data.resize(X.shape[0], self.M)
-            self.get_asp_mod().alloc_evals_on_GPU(length, self.M)
             self.get_asp_mod().alloc_evals_on_CPU(self.eval_data.memberships, self.eval_data.loglikelihoods)
-            GMM.eval_data_gpu_copy = self.eval_data
             GMM.eval_data_cpu_copy = self.eval_data
+            if GMM.use_cuda:
+                self.get_asp_mod().alloc_evals_on_GPU(length, self.M)
+                GMM.eval_data_gpu_copy = self.eval_data
 
     def internal_free_eval_data(self):
         if GMM is None: return
@@ -340,7 +343,8 @@ class GMM(object):
     def internal_seed_data(self, X, D, N):
         getattr(self.get_asp_mod(),'seed_components_'+self.cvtype)(self.M, D, N)
         self.components_seeded = True
-        self.get_asp_mod().copy_component_data_GPU_to_CPU(self.M, D)
+        if GMM.use_cuda:
+            self.get_asp_mod().copy_component_data_GPU_to_CPU(self.M, D)
 
     def __init__(self, M, D, means=None, covars=None, weights=None, cvtype='diag'): 
         """
