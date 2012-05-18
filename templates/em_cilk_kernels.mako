@@ -109,7 +109,6 @@ void compute_average_variance${'_'+'_'.join(param_val_list)}( float* fcs_data, c
 
 void estep1${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N, float* loglikelihoods) {
     // Compute likelihood for every data point in each component
-    float* temploglikelihoods = (float*)malloc(M*N*sizeof(float));
     cilk_for(int m=0; m < M; m++) {
         float component_pi = components->pi[m];
         float component_constant = components->constant[m];
