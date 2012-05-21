@@ -72,6 +72,7 @@ class GMM(object):
     names_of_backends_to_use = [config.get_option('name_of_backend_to_use')] #TODO: how to specify multiple backends in config file?
     use_cuda = False
     use_cilk = False
+    use_tbb  = False
     platform_info = {}
     if 'cuda' in names_of_backends_to_use:
         if 'nvcc' in platform.get_compilers() and platform.get_num_cuda_devices() > 0:
@@ -84,6 +85,11 @@ class GMM(object):
             use_cilk = True
             platform_info['cilk'] = platform.get_cpu_info()
         else: print "WARNING: You asked for a Cilk backend but no compiler was found."
+    if 'tbb' in names_of_backends_to_use:
+        if 'gcc' in platform.get_compilers():
+            use_tbb = True
+            platform_info['tbb'] = platform.get_cpu_info()
+        else: print "WARNING: You asked for a TBB backend but no compiler was found."
 
     #Singleton ASP module shared by all instances of GMM. This tracks all the internal representation of specialized functions.
     asp_mod = None    
@@ -102,7 +108,8 @@ class GMM(object):
             'max_num_dimensions_covar_v3': ['41'],
             'max_num_components_covar_v3': ['81'],
             'covar_version_name': ['V1'] },
-        'cilk': {'dummy': ['1']}
+        'cilk': {'dummy': ['1']},
+        'tbb': {'dummy': ['1']}
     }
     variant_param_autotune = { 'c++': {'dummy': ['1']},
         'cuda': {
@@ -115,7 +122,8 @@ class GMM(object):
             'max_num_dimensions_covar_v3': ['41'],
             'max_num_components_covar_v3': ['81'],
             'covar_version_name': ['V1','V2A','V2B','V3'] },
-        'cilk': {'dummy': ['1']}
+        'cilk': {'dummy': ['1']},
+        'tbb': {'dummy': ['1']}
     }
 
     #Functions used to evaluate whether a particular code variant can be compiled or successfully run a particular input
@@ -157,6 +165,7 @@ class GMM(object):
     backend_compilable_limit_funcs = { 
         'c++':  lambda param_dict, device: True,
         'cilk': lambda param_dict, device: True,
+        'tbb': lambda param_dict, device: True,
         'cuda': cuda_compilable_limits
     }
 
@@ -196,6 +205,7 @@ class GMM(object):
     backend_runable_limit_funcs = { 
         'c++':  lambda param_dict, device: lambda *args, **kwargs: True,
         'cilk': lambda param_dict, device: lambda *args, **kwargs: True,
+        'tbb': lambda param_dict, device: lambda *args, **kwargs: True,
         'cuda': cuda_runable_limits
     }
 
@@ -218,9 +228,18 @@ class GMM(object):
         c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
         #GMM.asp_mod.add_to_preamble(c_decl_rend,'cilk')
 
+    def tbb_backend_render_func(self, param_dict, vals):
+        tbb_kern_tpl = AspTemplate.Template(filename="templates/em_tbb_kernels.mako")
+        tbb_kern_rend = tbb_kern_tpl.render( param_val_list = vals, **param_dict)
+        GMM.asp_mod.add_to_module([Line(tbb_kern_rend)],'tbb')
+        c_decl_tpl = AspTemplate.Template(filename="templates/em_tbb_kernel_decl.mako") 
+        c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
+        #GMM.asp_mod.add_to_preamble(c_decl_rend,'tbb')
+
     backend_specific_render_funcs = {
         'c++': lambda param_dict, vals: None,
         'cilk': cilk_backend_render_func,
+        'tbb': tbb_backend_render_func,
         'cuda': cuda_backend_render_func
     }
 
@@ -371,12 +390,11 @@ class GMM(object):
     #Called the first time a GMM instance tries to use a specialized function
     def initialize_asp_mod(self):
         # Create ASP module
-        GMM.asp_mod = asp_module.ASPModule(use_cuda=GMM.use_cuda, use_cilk=GMM.use_cilk)
+        GMM.asp_mod = asp_module.ASPModule(use_cuda=GMM.use_cuda, use_cilk=GMM.use_cilk, use_tbb=GMM.use_tbb)
 
         if GMM.use_cuda:
             self.insert_base_code_into_listed_modules(['c++'])
             self.insert_non_rendered_code_into_cuda_module()
-
             self.insert_rendered_code_into_module('cuda')
             GMM.asp_mod.backends['cuda'].toolchain.cflags.extend(["-Xcompiler","-fPIC","-arch=sm_%s%s" % GMM.platform_info['cuda']['capability'] ])
             GMM.asp_mod.backends['c++'].compilable = False # TODO: For now, must force ONLY cuda backend to compile
@@ -387,6 +405,11 @@ class GMM(object):
             self.insert_rendered_code_into_module('cilk')
             GMM.asp_mod.backends['cilk'].toolchain.cc = 'icc'
             GMM.asp_mod.backends['cilk'].toolchain.cflags = ['-O2','-gcc', '-ip','-fPIC']
+
+        if GMM.use_tbb:
+            self.insert_base_code_into_listed_modules(['tbb'])
+            self.insert_non_rendered_code_into_tbb_module()
+            self.insert_rendered_code_into_module('tbb')
 
         # Setup toolchain
 	from codepy.libraries import add_numpy, add_boost_python, add_cuda
@@ -490,6 +513,35 @@ class GMM(object):
         system_header_names = ['cilk/cilk.h','cilk/reducer_opadd.h']  
         for x in system_header_names: 
             GMM.asp_mod.add_to_preamble([Include(x, True)],'cilk')
+
+    def insert_non_rendered_code_into_tbb_module(self):
+        component_t_decl =""" 
+            typedef struct components_struct {
+                float* N;        // expected # of pixels in component: [M]
+                float* pi;       // probability of component in GMM: [M]
+                float* CP; //cluster probability [M]
+                float* constant; // Normalizing constant [M]
+                float* avgvar;    // average variance [M]
+                float* means;   // Spectral mean for the component: [M*D]
+                float* R;      // Covariance matrix: [M*D*D]
+                float* Rinv;   // Inverse of covariance matrix: [M*D*D]
+            } components_t;"""
+        #GMM.asp_mod.add_to_preamble(component_t_decl,'tbb')
+
+        #TODO: Move this back into insert_base_code_into_listed_modules for cuda 4.1
+        names_of_helper_funcs = ["alloc_events_on_CPU", "alloc_components_on_CPU", "alloc_evals_on_CPU", "dealloc_events_on_CPU", "dealloc_components_on_CPU", "dealloc_temp_components_on_CPU", "dealloc_evals_on_CPU", "relink_components_on_CPU", "compute_distance_rissanen", "merge_components", "create_lut_log_table", "compute_KL_distance"]
+        for fname in names_of_helper_funcs:
+            GMM.asp_mod.add_helper_function(fname, "", 'tbb')
+
+        tbb_base_tpl = AspTemplate.Template(filename="templates/em_tbb_helper_funcs.mako")
+        tbb_base_rend = tbb_base_tpl.render()
+        #GMM.asp_mod.add_to_module([Line(tbb_base_rend)],'tbb')
+
+        #Add Cilk source code that is not based on code variant parameters
+        system_header_names = ['tbb/task_scheduler_init.h', 'tbb/parallel_reduce.h', 'tbb/parallel_for.h', 'tbb/blocked_range.h']
+
+        for x in system_header_names: 
+            GMM.asp_mod.add_to_preamble([Include(x, True)],'tbb')
 
     def render_func_variant( self, param_dict, param_val_list, can_be_compiled, backend_name, func_name):
         #Render a single variant from a template
