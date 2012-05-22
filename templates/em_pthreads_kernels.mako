@@ -223,8 +223,41 @@ void mstep_n_idx${'_'+'_'.join(param_val_list)}(float* data, int* indices, int n
     }
 }
 
-void mstep_covar${'_'+'_'.join(param_val_list)}(float* data, components_t* components,float* component_memberships, int D, int M, int N) {
+struct args_for_mstep${'_'+'_'.join(param_val_list)} {
+    int tid;
+    float* data;
+    components_t* components;
+    float* component_memberships;
+    int D;
+    int M;
+    int N;
+};
+
+struct args_for_mstep_idx${'_'+'_'.join(param_val_list)} {
+    int tid;
+    float* data;
+    components_t* components;
+    float* component_memberships;
+    int D;
+    int M;
+    int N;
+    int* indices;
+    int num_indices;
+};
+
+struct args_for_mstep${'_'+'_'.join(param_val_list)} args_for_mstep${'_'+'_'.join(param_val_list)}_array[NUM_THREADS];
+
+void *pthreads_mstep_covar${'_'+'_'.join(param_val_list)}(void *threadarg) {
+    struct args_for_mstep${'_'+'_'.join(param_val_list)} * t_data = (struct args_for_mstep${'_'+'_'.join(param_val_list)} *) threadarg;
+    float* data = t_data->data;
+    components_t* components = t_data->components;
+    float* component_memberships = t_data->component_memberships;
+    int D = t_data->D;
+    int M = t_data->M;
+    int N = t_data->N;
+
     for(int m=0; m < M; m++) {
+        if( m % NUM_THREADS != t_data->tid) continue;
         float* means = &(components->means[m*D]);
         for(int i=0; i < D; i++) {
             for(int j=0; j <= i; j++) {
@@ -252,6 +285,41 @@ void mstep_covar${'_'+'_'.join(param_val_list)}(float* data, components_t* compo
                 }
             }
         }
+    }
+    pthread_exit(NULL);
+}
+
+void mstep_covar${'_'+'_'.join(param_val_list)}(float* data, components_t* components,float* component_memberships, int D, int M, int N) {
+    args_for_mstep${'_'+'_'.join(param_val_list)}* t_data_arr = args_for_mstep${'_'+'_'.join(param_val_list)}_array;
+    pthread_t threads[NUM_THREADS];
+    pthread_attr_t attr;
+    int rc;
+    long t;
+    void *status;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+    for(t=0; t<NUM_THREADS; t++){
+        t_data_arr[t].tid = t;
+        t_data_arr[t].data = data;
+        t_data_arr[t].components = components;
+        t_data_arr[t].component_memberships = component_memberships;
+        t_data_arr[t].D = D;
+        t_data_arr[t].M = M;
+        t_data_arr[t].N = N;
+        rc = pthread_create(&threads[t], NULL, pthreads_mstep_covar${'_'+'_'.join(param_val_list)}, (void *) &t_data_arr[t]);
+        if (rc){
+            printf("ERROR; return code from pthread_create() is %d\n", rc);
+            exit(-1);
+        }
+    }
+    pthread_attr_destroy(&attr);
+    for(t=0; t<NUM_THREADS; t++) {
+      rc = pthread_join(threads[t], &status);
+      if (rc) {
+         printf("ERROR; return code from pthread_join() is %d\n", rc);
+         exit(-1);
+         }
     }
 }
 

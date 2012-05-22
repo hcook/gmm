@@ -258,7 +258,7 @@ class GMM(object):
 
     def pthreads_backend_render_func(self, param_dict, vals):
         pthreads_kern_tpl = AspTemplate.Template(filename="templates/em_pthreads_kernels.mako")
-        pthreads_kern_rend = tbb_kern_tpl.render( param_val_list = vals, **param_dict)
+        pthreads_kern_rend = pthreads_kern_tpl.render( param_val_list = vals, **param_dict)
         GMM.asp_mod.add_to_module([Line(pthreads_kern_rend)],'pthreads')
         c_decl_tpl = AspTemplate.Template(filename="templates/em_pthreads_kernel_decl.mako") 
         c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
@@ -497,7 +497,8 @@ class GMM(object):
         if backend_name == 'pthreads':
             system_header_names = ['pthread.h']
             for x in system_header_names: 
-                GMM.asp_mod.add_to_preamble([Include(x, True)],'tbb')
+                GMM.asp_mod.add_to_preamble([Include(x, True)],'pthreads')
+            GMM.asp_mod.add_to_preamble("#define NUM_THREADS 2",'pthreads')
         elif backend_name == 'tbb':
             system_header_names = ['tbb/task_scheduler_init.h', 'tbb/parallel_reduce.h', 'tbb/parallel_for.h', 'tbb/blocked_range.h']
             for x in system_header_names: 
