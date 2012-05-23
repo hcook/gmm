@@ -107,9 +107,18 @@ void compute_average_variance${'_'+'_'.join(param_val_list)}( float* fcs_data, c
     }
 }
 
-void estep1${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N, float* loglikelihoods) {
-    // Compute likelihood for every data point in each component
+void *pthreads_estep1${'_'+'_'.join(param_val_list)}(void *threadarg) {
+    struct args_for_pthreads *t_data = (struct args_for_pthreads *) threadarg;
+    float* data = t_data->data;
+    components_t* components = t_data->components;
+    float* component_memberships = t_data->component_memberships;
+    int D = t_data->D;
+    int M = t_data->M;
+    int N = t_data->N;
+
     for(int m=0; m < M; m++) {
+    // Compute likelihood for every data point in each component
+        if( m % NUM_THREADS != t_data->tid) continue;
         float component_pi = components->pi[m];
         float component_constant = components->constant[m];
         float* means = &(components->means[m*D]);
@@ -130,6 +139,11 @@ void estep1${'_'+'_'.join(param_val_list)}(float* data, components_t* components
             component_memberships[m*N+n] = (component_pi > 0.0f) ? -0.5*like + component_constant + logf(component_pi) : MINVALUEFORMINUSLOG;
         }
     }
+    pthread_exit(NULL);
+}
+
+void estep1${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N, float* loglikelihoods) {
+    pthreads_launch_mstep(pthreads_estep1${'_'+'_'.join(param_val_list)}, data, components, component_memberships, D, M, N);
     //estep1 log_add()
     for(int n=0; n < N; n++) {
         float finalloglike = MINVALUEFORMINUSLOG;
@@ -164,7 +178,6 @@ float estep2_events${'_'+'_'.join(param_val_list)}(components_t* components, flo
 	for(int m=0; m < M; m++) {
 	    component_memberships[m*N+n] = expf(component_memberships[m*N+n] - temp);
 	}
-        //or component_memberships[n:M:N] = exp(component_memberships[n:M:N] - denominator_sum);
 
 	return thread_likelihood;
 }
@@ -178,7 +191,7 @@ void estep2${'_'+'_'.join(param_val_list)}(float* data, components_t* components
 }
 
 void *pthreads_mstep_mean${'_'+'_'.join(param_val_list)}(void *threadarg) {
-    struct args_for_mstep *t_data = (struct args_for_mstep *) threadarg;
+    struct args_for_pthreads *t_data = (struct args_for_pthreads *) threadarg;
     float* data = t_data->data;
     components_t* components = t_data->components;
     float* component_memberships = t_data->component_memberships;
@@ -204,7 +217,7 @@ void mstep_mean${'_'+'_'.join(param_val_list)}(float* data, components_t* compon
 }
 
 void *pthreads_mstep_mean_idx${'_'+'_'.join(param_val_list)}(void *threadarg) {
-    struct args_for_mstep_idx *t_data = (struct args_for_mstep_idx *) threadarg;
+    struct args_for_pthreads_idx *t_data = (struct args_for_pthreads_idx *) threadarg;
     float* data = t_data->data;
     int* indices = t_data->indices;
     int num_indices = t_data->num_indices;
@@ -233,7 +246,7 @@ void mstep_mean_idx${'_'+'_'.join(param_val_list)}(float* data_by_dimension, int
 }
 
 void *pthreads_mstep_n${'_'+'_'.join(param_val_list)}(void *threadarg) {
-    struct args_for_mstep *t_data = (struct args_for_mstep *) threadarg;
+    struct args_for_pthreads *t_data = (struct args_for_pthreads *) threadarg;
     //float* data = t_data->data;
     components_t* components = t_data->components;
     float* component_memberships = t_data->component_memberships;
@@ -257,7 +270,7 @@ void mstep_n${'_'+'_'.join(param_val_list)}(float* data, components_t* component
 }
 
 void *pthreads_mstep_n_idx${'_'+'_'.join(param_val_list)}(void *threadarg) {
-    struct args_for_mstep_idx *t_data = (struct args_for_mstep_idx *) threadarg;
+    struct args_for_pthreads_idx *t_data = (struct args_for_pthreads_idx *) threadarg;
     //float* data = t_data->data;
     int* indices = t_data->indices;
     int num_indices = t_data->num_indices;
@@ -284,7 +297,7 @@ void mstep_n_idx${'_'+'_'.join(param_val_list)}(float* data, int* indices, int n
 }
 
 void *pthreads_mstep_covar${'_'+'_'.join(param_val_list)}(void *threadarg) {
-    struct args_for_mstep *t_data = (struct args_for_mstep *) threadarg;
+    struct args_for_pthreads *t_data = (struct args_for_pthreads *) threadarg;
     float* data = t_data->data;
     components_t* components = t_data->components;
     float* component_memberships = t_data->component_memberships;
@@ -330,7 +343,7 @@ void mstep_covar${'_'+'_'.join(param_val_list)}(float* data, components_t* compo
 }
 
 void *pthreads_mstep_covar_idx${'_'+'_'.join(param_val_list)}(void *threadarg) {
-    struct args_for_mstep_idx *t_data = (struct args_for_mstep_idx *) threadarg;
+    struct args_for_pthreads_idx *t_data = (struct args_for_pthreads_idx *) threadarg;
     float* data = t_data->data;
     int* indices = t_data->indices;
     int num_indices = t_data->num_indices;

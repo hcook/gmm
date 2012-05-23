@@ -1,6 +1,6 @@
 #define NUM_THREADS 2
 
-struct args_for_mstep {
+struct args_for_pthreads {
     int tid;
     float* data;
     components_t* components;
@@ -10,7 +10,7 @@ struct args_for_mstep {
     int N;
 };
 
-struct args_for_mstep_idx {
+struct args_for_pthreads_idx {
     int tid;
     float* data;
     components_t* components;
@@ -22,11 +22,11 @@ struct args_for_mstep_idx {
     int num_indices;
 };
 
-struct args_for_mstep args_for_mstep_array[NUM_THREADS];
-struct args_for_mstep_idx args_for_mstep_idx_array[NUM_THREADS];
+struct args_for_pthreads args_for_pthreads_array[NUM_THREADS];
+struct args_for_pthreads_idx args_for_pthreads_idx_array[NUM_THREADS];
 
 void pthreads_launch_mstep(void *(*kernel)(void*), float* data, components_t* components,float* component_memberships, int D, int M, int N) {
-    args_for_mstep* t_data_arr = args_for_mstep_array;
+    args_for_pthreads* t_data_arr = args_for_pthreads_array;
     pthread_t threads[NUM_THREADS];
     pthread_attr_t attr;
     int rc;
@@ -60,7 +60,7 @@ void pthreads_launch_mstep(void *(*kernel)(void*), float* data, components_t* co
 }
 
 void pthreads_launch_mstep_idx(void *(*kernel)(void*), float* data, int* indices, int num_indices, components_t* components, float* component_memberships, int D, int M, int N) {
-    args_for_mstep_idx* t_data_arr = args_for_mstep_idx_array;
+    args_for_pthreads_idx* t_data_arr = args_for_pthreads_idx_array;
     pthread_t threads[NUM_THREADS];
     pthread_attr_t attr;
     int rc;
