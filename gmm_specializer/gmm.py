@@ -498,7 +498,9 @@ class GMM(object):
             system_header_names = ['pthread.h']
             for x in system_header_names: 
                 GMM.asp_mod.add_to_preamble([Include(x, True)],'pthreads')
-            GMM.asp_mod.add_to_preamble("#define NUM_THREADS 2",'pthreads')
+            help_tpl = AspTemplate.Template(filename="templates/em_pthreads_helper_funcs.mako")
+            help_rend  = help_tpl.render()
+            GMM.asp_mod.add_to_preamble([Line(help_rend)],'pthreads')
         elif backend_name == 'tbb':
             system_header_names = ['tbb/task_scheduler_init.h', 'tbb/parallel_reduce.h', 'tbb/parallel_for.h', 'tbb/blocked_range.h']
             for x in system_header_names: 

@@ -177,8 +177,17 @@ void estep2${'_'+'_'.join(param_val_list)}(float* data, components_t* components
     *likelihood = total;
 }
 
-void mstep_mean${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N) {
+void *pthreads_mstep_mean${'_'+'_'.join(param_val_list)}(void *threadarg) {
+    struct args_for_mstep *t_data = (struct args_for_mstep *) threadarg;
+    float* data = t_data->data;
+    components_t* components = t_data->components;
+    float* component_memberships = t_data->component_memberships;
+    int D = t_data->D;
+    int M = t_data->M;
+    int N = t_data->N;
+
     for(int m=0; m < M; m++) {
+        if( m % NUM_THREADS != t_data->tid) continue;
         for(int d=0; d < D; d++) {
 	    components->means[m*D+d] = 0.0;
 	    for(int n=0; n < N; n++) {
@@ -187,33 +196,79 @@ void mstep_mean${'_'+'_'.join(param_val_list)}(float* data, components_t* compon
 	    components->means[m*D+d] /= components->N[m];
         }
     }
+    pthread_exit(NULL);
 }
 
-void mstep_mean_idx${'_'+'_'.join(param_val_list)}(float* data_by_dimension, int* indices, int num_indices, components_t* components, float* component_memberships, int D, int M, int N) {
+void mstep_mean${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N) {
+    pthreads_launch_mstep(pthreads_mstep_mean${'_'+'_'.join(param_val_list)}, data, components, component_memberships, D, M, N);
+}
+
+void *pthreads_mstep_mean_idx${'_'+'_'.join(param_val_list)}(void *threadarg) {
+    struct args_for_mstep_idx *t_data = (struct args_for_mstep_idx *) threadarg;
+    float* data = t_data->data;
+    int* indices = t_data->indices;
+    int num_indices = t_data->num_indices;
+    components_t* components = t_data->components;
+    float* component_memberships = t_data->component_memberships;
+    int D = t_data->D;
+    int M = t_data->M;
+    int N = t_data->N;
+
     for(int m=0; m < M; m++) {
+        if( m % NUM_THREADS != t_data->tid) continue;
         for(int d=0; d < D; d++) {
 	    components->means[m*D+d] = 0.0;
 	    for(int index = 0; index < num_indices; index++) {
                 int n = indices[index];
-		components->means[m*D+d] += data_by_dimension[d*N+n]*component_memberships[m*N+n];
+		components->means[m*D+d] += data[d*N+n]*component_memberships[m*N+n];
 	    }
 	    components->means[m*D+d] /= components->N[m];
         }
     }
+    pthread_exit(NULL);
 }
 
-void mstep_n${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N) {
+void mstep_mean_idx${'_'+'_'.join(param_val_list)}(float* data_by_dimension, int* indices, int num_indices, components_t* components, float* component_memberships, int D, int M, int N) {
+    pthreads_launch_mstep_idx(pthreads_mstep_mean_idx${'_'+'_'.join(param_val_list)}, data_by_dimension, indices, num_indices, components, component_memberships, D, M, N);
+}
+
+void *pthreads_mstep_n${'_'+'_'.join(param_val_list)}(void *threadarg) {
+    struct args_for_mstep *t_data = (struct args_for_mstep *) threadarg;
+    //float* data = t_data->data;
+    components_t* components = t_data->components;
+    float* component_memberships = t_data->component_memberships;
+    //int D = t_data->D;
+    int M = t_data->M;
+    int N = t_data->N;
+
     for(int m=0; m < M; m++) {
+        if( m % NUM_THREADS != t_data->tid) continue;
         components->N[m] = 0.0;
         for(int n=0; n < N; n++) {
             components->N[m] += component_memberships[m*N+n];
         }
         components->pi[m] =  components->N[m];
     }
+    pthread_exit(NULL);
 }
 
-void mstep_n_idx${'_'+'_'.join(param_val_list)}(float* data, int* indices, int num_indices, components_t* components, float* component_memberships, int D, int M, int N) {
+void mstep_n${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N) {
+    pthreads_launch_mstep(pthreads_mstep_n${'_'+'_'.join(param_val_list)}, data, components, component_memberships, D, M, N);
+}
+
+void *pthreads_mstep_n_idx${'_'+'_'.join(param_val_list)}(void *threadarg) {
+    struct args_for_mstep_idx *t_data = (struct args_for_mstep_idx *) threadarg;
+    //float* data = t_data->data;
+    int* indices = t_data->indices;
+    int num_indices = t_data->num_indices;
+    components_t* components = t_data->components;
+    float* component_memberships = t_data->component_memberships;
+    //int D = t_data->D;
+    int M = t_data->M;
+    int N = t_data->N;
+
     for(int m=0; m < M; m++) {
+        if( m % NUM_THREADS != t_data->tid) continue;
         components->N[m] = 0.0;
         for(int index=0; index < num_indices; index++) {
             int n = indices[index];
@@ -221,34 +276,15 @@ void mstep_n_idx${'_'+'_'.join(param_val_list)}(float* data, int* indices, int n
         }
         components->pi[m] =  components->N[m];
     }
+    pthread_exit(NULL);
 }
 
-struct args_for_mstep${'_'+'_'.join(param_val_list)} {
-    int tid;
-    float* data;
-    components_t* components;
-    float* component_memberships;
-    int D;
-    int M;
-    int N;
-};
-
-struct args_for_mstep_idx${'_'+'_'.join(param_val_list)} {
-    int tid;
-    float* data;
-    components_t* components;
-    float* component_memberships;
-    int D;
-    int M;
-    int N;
-    int* indices;
-    int num_indices;
-};
-
-struct args_for_mstep${'_'+'_'.join(param_val_list)} args_for_mstep${'_'+'_'.join(param_val_list)}_array[NUM_THREADS];
+void mstep_n_idx${'_'+'_'.join(param_val_list)}(float* data, int* indices, int num_indices, components_t* components, float* component_memberships, int D, int M, int N) {
+    pthreads_launch_mstep_idx(pthreads_mstep_n_idx${'_'+'_'.join(param_val_list)}, data, indices, num_indices, components, component_memberships, D, M, N);
+}
 
 void *pthreads_mstep_covar${'_'+'_'.join(param_val_list)}(void *threadarg) {
-    struct args_for_mstep${'_'+'_'.join(param_val_list)} * t_data = (struct args_for_mstep${'_'+'_'.join(param_val_list)} *) threadarg;
+    struct args_for_mstep *t_data = (struct args_for_mstep *) threadarg;
     float* data = t_data->data;
     components_t* components = t_data->components;
     float* component_memberships = t_data->component_memberships;
@@ -290,41 +326,22 @@ void *pthreads_mstep_covar${'_'+'_'.join(param_val_list)}(void *threadarg) {
 }
 
 void mstep_covar${'_'+'_'.join(param_val_list)}(float* data, components_t* components,float* component_memberships, int D, int M, int N) {
-    args_for_mstep${'_'+'_'.join(param_val_list)}* t_data_arr = args_for_mstep${'_'+'_'.join(param_val_list)}_array;
-    pthread_t threads[NUM_THREADS];
-    pthread_attr_t attr;
-    int rc;
-    long t;
-    void *status;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-
-    for(t=0; t<NUM_THREADS; t++){
-        t_data_arr[t].tid = t;
-        t_data_arr[t].data = data;
-        t_data_arr[t].components = components;
-        t_data_arr[t].component_memberships = component_memberships;
-        t_data_arr[t].D = D;
-        t_data_arr[t].M = M;
-        t_data_arr[t].N = N;
-        rc = pthread_create(&threads[t], NULL, pthreads_mstep_covar${'_'+'_'.join(param_val_list)}, (void *) &t_data_arr[t]);
-        if (rc){
-            printf("ERROR; return code from pthread_create() is %d\n", rc);
-            exit(-1);
-        }
-    }
-    pthread_attr_destroy(&attr);
-    for(t=0; t<NUM_THREADS; t++) {
-      rc = pthread_join(threads[t], &status);
-      if (rc) {
-         printf("ERROR; return code from pthread_join() is %d\n", rc);
-         exit(-1);
-         }
-    }
+    pthreads_launch_mstep(pthreads_mstep_covar${'_'+'_'.join(param_val_list)}, data, components, component_memberships, D, M, N);
 }
 
-void mstep_covar_idx${'_'+'_'.join(param_val_list)}(float* data_by_dimension, float* data_by_event, int* indices, int num_indices, components_t* components, float* component_memberships, int D, int M, int N) {
+void *pthreads_mstep_covar_idx${'_'+'_'.join(param_val_list)}(void *threadarg) {
+    struct args_for_mstep_idx *t_data = (struct args_for_mstep_idx *) threadarg;
+    float* data = t_data->data;
+    int* indices = t_data->indices;
+    int num_indices = t_data->num_indices;
+    components_t* components = t_data->components;
+    float* component_memberships = t_data->component_memberships;
+    int D = t_data->D;
+    int M = t_data->M;
+    int N = t_data->N;
+
     for(int m=0; m < M; m++) {
+        if( m % NUM_THREADS != t_data->tid) continue;
         float* means = &(components->means[m*D]);
         for(int i=0; i < D; i++) {
             for(int j=0; j <= i; j++) {
@@ -338,7 +355,7 @@ void mstep_covar_idx${'_'+'_'.join(param_val_list)}(float* data_by_dimension, fl
                 float sum = 0.0;
                 for(int index=0; index < num_indices; index++) {
                     int n = indices[index];
-                    sum += (data_by_dimension[i*N+n]-means[i])*(data_by_dimension[j*N+n]-means[j])*component_memberships[m*N+n];
+                    sum += (data[i*N+n]-means[i])*(data[j*N+n]-means[j])*component_memberships[m*N+n];
                 }
 
                 if(components->N[m] >= 1.0f) {
@@ -354,4 +371,10 @@ void mstep_covar_idx${'_'+'_'.join(param_val_list)}(float* data_by_dimension, fl
             }
         }
     }
+    pthread_exit(NULL);
 }
+
+void mstep_covar_idx${'_'+'_'.join(param_val_list)}(float* data_by_dimension, float* data_by_event, int* indices, int num_indices, components_t* components, float* component_memberships, int D, int M, int N) {
+    pthreads_launch_mstep_idx(pthreads_mstep_covar_idx${'_'+'_'.join(param_val_list)}, data_by_dimension, indices, num_indices, components, component_memberships, D, M, N);
+}
+
