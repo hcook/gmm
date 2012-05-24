@@ -182,12 +182,28 @@ float estep2_events${'_'+'_'.join(param_val_list)}(components_t* components, flo
 	return thread_likelihood;
 }
 
-void estep2${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N, float* likelihood) {
-    float total = 0.0f;
+void* pthreads_estep2_events${'_'+'_'.join(param_val_list)}(void *threadarg) {
+    struct args_for_estep2 *t_data = (struct args_for_estep2 *) threadarg;
+    components_t* components = t_data->components;
+    float* component_memberships = t_data->component_memberships;
+    int M = t_data->M; 
+    int N = t_data->N;
+    float* likelihoods = t_data->likelihoods;
+
     for(int n=0; n < N; n++) {
-        total += estep2_events${'_'+'_'.join(param_val_list)}(components, component_memberships, M, n, N);
+        if( n % NUM_THREADS != t_data->tid) continue;
+        likelihoods[n] = estep2_events${'_'+'_'.join(param_val_list)}(components, component_memberships, M, n, N);
     }
+    pthread_exit(NULL);
+}
+
+void estep2${'_'+'_'.join(param_val_list)}(float* data, components_t* components, float* component_memberships, int D, int M, int N, float* likelihood) {
+    float total = 0.0;
+    float *likelihoods = (float*)malloc(N*sizeof(float));
+    pthreads_launch_estep2(pthreads_estep2_events${'_'+'_'.join(param_val_list)}, components, component_memberships, M, N, likelihoods);
+    for(int n = 0; n < N; n++) total += likelihoods[n];
     *likelihood = total;
+    free(likelihoods);
 }
 
 void *pthreads_mstep_mean${'_'+'_'.join(param_val_list)}(void *threadarg) {
