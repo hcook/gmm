@@ -236,41 +236,41 @@ class GMM(object):
     def cuda_backend_render_func(self, param_dict, vals):
         param_dict['supports_float32_atomic_add'] = GMM.platform_info['cuda']['supports_float32_atomic_add']
         cu_kern_tpl = AspTemplate.Template(filename="templates/em_cuda_kernels.mako")
-        cu_kern_rend = cu_kern_tpl.render( param_val_list = vals, **param_dict)
+        cu_kern_rend = str(cu_kern_tpl.render( param_val_list = vals, **param_dict))
         GMM.asp_mod.add_to_module([Line(cu_kern_rend)],'cuda')
         c_decl_tpl = AspTemplate.Template(filename="templates/em_cuda_launch_decl.mako") 
-        c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
+        c_decl_rend  = str(c_decl_tpl.render( param_val_list = vals, **param_dict))
         GMM.asp_mod.add_to_preamble(c_decl_rend,'c++') #TODO: <4.1 hack
         
     def cilk_backend_render_func(self, param_dict, vals):
         cilk_kern_tpl = AspTemplate.Template(filename="templates/em_cilk_kernels.mako")
-        cilk_kern_rend = cilk_kern_tpl.render( param_val_list = vals, **param_dict)
+        cilk_kern_rend = str(cilk_kern_tpl.render( param_val_list = vals, **param_dict))
         GMM.asp_mod.add_to_module([Line(cilk_kern_rend)],'cilk')
         c_decl_tpl = AspTemplate.Template(filename="templates/em_cilk_kernel_decl.mako") 
-        c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
+        c_decl_rend  = str(c_decl_tpl.render( param_val_list = vals, **param_dict))
         #GMM.asp_mod.add_to_preamble(c_decl_rend,'cilk')
 
     def tbb_backend_render_func(self, param_dict, vals):
         tbb_kern_tpl = AspTemplate.Template(filename="templates/em_tbb_kernels.mako")
-        tbb_kern_rend = tbb_kern_tpl.render( param_val_list = vals, **param_dict)
+        tbb_kern_rend = str(tbb_kern_tpl.render( param_val_list = vals, **param_dict))
         GMM.asp_mod.add_to_module([Line(tbb_kern_rend)],'tbb')
         c_decl_tpl = AspTemplate.Template(filename="templates/em_tbb_kernel_decl.mako") 
-        c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
+        c_decl_rend  = str(c_decl_tpl.render( param_val_list = vals, **param_dict))
         #GMM.asp_mod.add_to_preamble(c_decl_rend,'tbb')
 
     def pthreads_backend_render_func(self, param_dict, vals):
         pthreads_kern_tpl = AspTemplate.Template(filename="templates/em_pthreads_kernels.mako")
-        pthreads_kern_rend = pthreads_kern_tpl.render( param_val_list = vals, **param_dict)
+        pthreads_kern_rend = str(pthreads_kern_tpl.render( param_val_list = vals, **param_dict))
         GMM.asp_mod.add_to_module([Line(pthreads_kern_rend)],'pthreads')
-        c_decl_tpl = AspTemplate.Template(filename="templates/em_pthreads_kernel_decl.mako") 
-        c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
+        c_decl_tpl = AspTemplate.Template(filename="templates/em_pthreads_kernel_decl.mako")
+        c_decl_rend  = str(c_decl_tpl.render( param_val_list = vals, **param_dict))
 
     def c_backend_render_func(self, param_dict, vals):
         c_kern_tpl = AspTemplate.Template(filename="templates/em_c++_kernels.mako")
-        c_kern_rend = c_kern_tpl.render( param_val_list = vals, **param_dict)
+        c_kern_rend = str(c_kern_tpl.render( param_val_list = vals, **param_dict))
         GMM.asp_mod.add_to_module([Line(c_kern_rend)],'c++')
         c_decl_tpl = AspTemplate.Template(filename="templates/em_c++_kernel_decl.mako") 
-        c_decl_rend  = c_decl_tpl.render( param_val_list = vals, **param_dict)
+        c_decl_rend  = str(c_decl_tpl.render( param_val_list = vals, **param_dict))
 
     backend_specific_render_funcs = {
         'c++': c_backend_render_func,
@@ -466,7 +466,7 @@ class GMM(object):
     def insert_base_code_into_listed_modules(self, names_of_backends):
         #Add code to all backends that is used by all backends
         c_base_tpl = AspTemplate.Template(filename="templates/em_base_helper_funcs.mako")
-        c_base_rend = c_base_tpl.render()
+        c_base_rend = str(c_base_tpl.render())
         component_t_decl ="""
             typedef struct components_struct {
                 float* N;        // expected # of pixels in component: [M]
@@ -501,7 +501,7 @@ class GMM(object):
             for x in system_header_names: 
                 GMM.asp_mod.add_to_preamble([Include(x, True)],'pthreads')
             help_tpl = AspTemplate.Template(filename="templates/em_pthreads_helper_funcs.mako")
-            help_rend  = help_tpl.render()
+            help_rend  = str(help_tpl.render())
             GMM.asp_mod.add_to_preamble([Line(help_rend)],'pthreads')
         elif backend_name == 'tbb':
             system_header_names = ['tbb/task_scheduler_init.h', 'tbb/parallel_reduce.h', 'tbb/parallel_for.h', 'tbb/blocked_range.h']
@@ -528,10 +528,10 @@ class GMM(object):
 
             #Add bodies of helper functions
             c_base_tpl = AspTemplate.Template(filename="templates/em_cuda_host_helper_funcs.mako")
-            c_base_rend  = c_base_tpl.render()
+            c_base_rend  = str(c_base_tpl.render())
             GMM.asp_mod.add_to_module([Line(c_base_rend)],'c++')
             cu_base_tpl = AspTemplate.Template(filename="templates/em_cuda_device_helper_funcs.mako")
-            cu_base_rend = cu_base_tpl.render()
+            cu_base_rend = str(cu_base_tpl.render())
             GMM.asp_mod.add_to_module([Line(cu_base_rend)],'cuda')
             #Add Boost interface links for helper functions
             names_of_cuda_helper_funcs = ["alloc_events_on_GPU","alloc_index_list_on_GPU", "alloc_events_from_index_on_GPU", "alloc_components_on_GPU","alloc_evals_on_GPU","copy_event_data_CPU_to_GPU", "copy_index_list_data_CPU_to_GPU", "copy_events_from_index_CPU_to_GPU", "copy_component_data_CPU_to_GPU", "copy_component_data_GPU_to_CPU", "copy_evals_CPU_to_GPU", "copy_evals_data_GPU_to_CPU","dealloc_events_on_GPU","dealloc_components_on_GPU", "dealloc_evals_on_GPU", "dealloc_index_list_on_GPU"] 
@@ -550,7 +550,7 @@ class GMM(object):
             return '_'.join(['em',backend_name if backend_name != 'c++' else 'c',base]+param_val_list)
         if can_be_compiled: 
             c_tpl = AspTemplate.Template(filename='_'.join(["templates/em",backend_name,func_name+".mako"]))
-            func_body = c_tpl.render( param_val_list = param_val_list, **param_dict)
+            func_body = str(c_tpl.render( param_val_list = param_val_list, **param_dict))
         else:
             func_body = "void " + var_name_generator(func_name) + "(int m, int d, int n, PyObject *data){}"
         return var_name_generator(func_name), func_body
