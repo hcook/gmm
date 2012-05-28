@@ -32,7 +32,7 @@ class EventHandler:
     def __init__(self):
         fig.canvas.mpl_connect('button_press_event', self.mousepress)
         fig.canvas.mpl_connect('key_press_event', self.keypress)
-        self.size = 8
+        self.size = 16
         self.cvtype = 'full'
         self.D = 2
         self.N = 600
@@ -47,7 +47,7 @@ class EventHandler:
         new_point = np.array([[event.xdata, event.ydata]])
         self.X = np.ascontiguousarray(np.r_[self.X, new_point],dtype=np.float32)
         self.N += 1
-        pl.scatter(new_point.T[0], new_point.T[1], self.size, color="black", marker='x')
+        pl.scatter(new_point.T[0], new_point.T[1], self.size*4, color="black", marker='x')
         fig.canvas.draw()
 
     def keypress(self, event):
