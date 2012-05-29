@@ -32,7 +32,7 @@ class EventHandler:
     def __init__(self):
         fig.canvas.mpl_connect('button_press_event', self.mousepress)
         fig.canvas.mpl_connect('key_press_event', self.keypress)
-        self.size = 16
+        self.size = 20
         self.cvtype = 'full'
         self.D = 2
         self.N = 600
@@ -45,14 +45,15 @@ class EventHandler:
             return
 
         new_point = np.array([[event.xdata, event.ydata]])
-        self.X = np.ascontiguousarray(np.r_[self.X, new_point],dtype=np.float32)
+        self.X = np.r_[self.X, new_point]
         self.N += 1
-        pl.scatter(new_point.T[0], new_point.T[1], self.size*4, color="black", marker='x')
+        pl.scatter(new_point.T[0], new_point.T[1], self.size*4, color="black", marker='s')
         fig.canvas.draw()
 
     def keypress(self, event):
         if event.key in ['1','2','3','4','5','6','7','8','9']:
             self.M = int(event.key)
+            self.X = np.ascontiguousarray(self.X, dtype=np.float32)
             self.gmm = GMM(self.M, self.D, cvtype=self.cvtype)
             likelihood = self.gmm.train(self.X)
             means = self.gmm.components.means.reshape((self.M, self.D))
@@ -63,6 +64,7 @@ class EventHandler:
         if event.key == 'e' and self.gmm:
             means = self.gmm.components.means
             covars = self.gmm.components.covars
+            self.X = np.ascontiguousarray(self.X, dtype=np.float32)
             Y = self.gmm.predict(self.X)
             self.plot(means, covars, Y)
             
