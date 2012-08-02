@@ -427,7 +427,7 @@ class GMM(object):
     #Called the first time a GMM instance tries to use a specialized function
     def initialize_asp_mod(self):
         # Create ASP module
-        GMM.asp_mod = asp_module.ASPModule(use_cuda=GMM.use_cuda, use_cilk=GMM.use_cilk, use_tbb=GMM.use_tbb, use_pthreads=GMM.use_pthreads)
+        GMM.asp_mod = asp_module.ASPModule(use_cuda=GMM.use_cuda, use_cilk=GMM.use_cilk) #, use_tbb=GMM.use_tbb, use_pthreads=GMM.use_pthreads)
 
         def insert_code_standard(backend_name):
             self.insert_base_code_into_listed_modules([backend_name])
