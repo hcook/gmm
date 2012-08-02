@@ -446,7 +446,7 @@ class GMM(object):
         if GMM.use_cilk:
             insert_code_standard('cilk')
             GMM.asp_mod.backends['cilk'].toolchain.cc = 'icc'
-            GMM.asp_mod.backends['cilk'].toolchain.cflags = ['-O2','-gcc', '-ip','-fPIC']
+            GMM.asp_mod.backends['cilk'].toolchain.cflags = ['-O2','-gcc', '-ip','-fPIC','-std=c++0x']
 
         if GMM.use_tbb: insert_code_standard('tbb')
 
